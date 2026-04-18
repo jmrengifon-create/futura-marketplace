@@ -1,0 +1,60 @@
+# infra/monitoring/prometheus.yml — Prometheus scrape config
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: production
+    project:     futura-marketplace
+
+scrape_configs:
+  - job_name: 'backend'
+    static_configs:
+      - targets: ['backend:3001']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  - job_name: 'user-service'
+    static_configs:
+      - targets: ['user-service:3001']
+    metrics_path: '/metrics'
+
+  - job_name: 'product-service'
+    static_configs:
+      - targets: ['product-service:3002']
+    metrics_path: '/metrics'
+
+  - job_name: 'order-service'
+    static_configs:
+      - targets: ['order-service:3003']
+    metrics_path: '/metrics'
+
+  - job_name: 'notification-service'
+    static_configs:
+      - targets: ['notification-service:3008']
+    metrics_path: '/metrics'
+
+  - job_name: 'analytics-service'
+    static_configs:
+      - targets: ['analytics-service:3009']
+    metrics_path: '/metrics'
+
+  - job_name: 'whatsapp-service'
+    static_configs:
+      - targets: ['whatsapp-service:3007']
+    metrics_path: '/metrics'
+
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+rule_files:
+  - /etc/prometheus/alerts.yml

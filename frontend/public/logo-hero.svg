@@ -1,0 +1,53 @@
+<svg width="500" height="340" viewBox="0 0 500 340" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#1a4fa0"/>
+      <stop offset="100%" stop-color="#0a2260"/>
+    </radialGradient>
+    <radialGradient id="sph" cx="35%" cy="28%" r="65%">
+      <stop offset="0%" stop-color="#ff8080"/>
+      <stop offset="30%" stop-color="#dd1111"/>
+      <stop offset="100%" stop-color="#7a0000"/>
+    </radialGradient>
+    <radialGradient id="shine" cx="28%" cy="22%" r="42%">
+      <stop offset="0%" stop-color="rgba(255,220,220,0.55)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </radialGradient>
+    <linearGradient id="bandGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2a2a2a"/>
+      <stop offset="40%" stop-color="#111"/>
+      <stop offset="100%" stop-color="#3a3a3a"/>
+    </linearGradient>
+    <linearGradient id="futuraGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="50%" stop-color="#c8d4e8"/>
+      <stop offset="100%" stop-color="#8899bb"/>
+    </linearGradient>
+    <linearGradient id="evoGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#e0e8ff"/>
+      <stop offset="50%" stop-color="#aabbdd"/>
+      <stop offset="100%" stop-color="#6677aa"/>
+    </linearGradient>
+    <clipPath id="sphClip">
+      <ellipse cx="250" cy="118" rx="90" ry="88"/>
+    </clipPath>
+    <filter id="sphShadow">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+  <rect width="500" height="340" fill="url(#bg)"/>
+  <ellipse cx="250" cy="212" rx="64" ry="10" fill="#000" opacity="0.3"/>
+  <ellipse cx="250" cy="118" rx="90" ry="88" fill="url(#sph)" filter="url(#sphShadow)"/>
+  <ellipse cx="250" cy="94" rx="90" ry="24" fill="url(#bandGrad)" clip-path="url(#sphClip)"/>
+  <ellipse cx="250" cy="142" rx="90" ry="24" fill="url(#bandGrad)" clip-path="url(#sphClip)"/>
+  <ellipse cx="250" cy="92" rx="88" ry="6" fill="rgba(80,80,80,0.5)" clip-path="url(#sphClip)"/>
+  <ellipse cx="250" cy="144" rx="88" ry="6" fill="rgba(80,80,80,0.5)" clip-path="url(#sphClip)"/>
+  <ellipse cx="250" cy="118" rx="90" ry="88" fill="url(#shine)"/>
+  <text x="250" y="258" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-size="68" font-weight="900" fill="url(#futuraGrad)" letter-spacing="4">FUTURA</text>
+  <text x="418" y="234" text-anchor="middle" font-family="Arial, sans-serif" font-size="17" font-weight="400" fill="#c8d4e8">®</text>
+  <path d="M 72 308 A 14 14 0 0 1 72 286" stroke="#4488cc" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <path d="M 80 314 A 22 22 0 0 1 80 280" stroke="#3377bb" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <path d="M 90 320 A 30 30 0 0 1 90 274" stroke="#2266aa" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <text x="280" y="316" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-size="52" font-weight="900" fill="url(#evoGrad)" letter-spacing="2">EVOLUTION</text>
+  <path d="M 70 325 Q 250 338 435 325" stroke="#3366aa" stroke-width="2.5" fill="none" opacity="0.5"/>
+</svg>

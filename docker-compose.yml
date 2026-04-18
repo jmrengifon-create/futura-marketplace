@@ -1,0 +1,205 @@
+version: '3.8'
+
+# ══════════════════════════════════════════════════════════════
+# FUTURA MARKETPLACE v3.0 — Arquitectura completa
+# Microservicios + RabbitMQ + Redis + monitoring opcional
+# ══════════════════════════════════════════════════════════════
+
+services:
+
+  # ─── Core Infrastructure ──────────────────────────────────
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB:       futuradb
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-futura}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-futura_rabbit_2026}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    restart: unless-stopped
+
+  # ─── Backend monolith (compatibilidad frontend) ───────────
+  backend:
+    build: ./backend
+    ports:
+      - "3001:3001"
+    env_file: .env
+    environment:
+      DATABASE_URL:   postgres://postgres:${DB_PASSWORD}@db:5432/futuradb
+      REDIS_HOST:     redis
+      REDIS_PORT:     6379
+      AMQP_URL:       amqp://${RABBITMQ_USER:-futura}:${RABBITMQ_PASS:-futura_rabbit_2026}@rabbitmq:5672
+      SERVICE_NAME:   backend
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      db:       { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── WhatsApp FSM Service ─────────────────────────────────
+  whatsapp:
+    build:
+      context: .
+      dockerfile: services/whatsapp/Dockerfile
+    ports:
+      - "3007:3007"
+    env_file: .env
+    environment:
+      DATABASE_URL:   postgres://postgres:${DB_PASSWORD}@db:5432/futuradb
+      REDIS_HOST:     redis
+      AMQP_URL:       amqp://${RABBITMQ_USER:-futura}:${RABBITMQ_PASS:-futura_rabbit_2026}@rabbitmq:5672
+      SERVICE_NAME:   whatsapp-service
+    depends_on:
+      db:       { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    restart: unless-stopped
+
+  # ─── Notification Service (event-driven) ─────────────────
+  notification:
+    build:
+      context: .
+      dockerfile: services/notification/Dockerfile
+    ports:
+      - "3008:3008"
+    env_file: .env
+    environment:
+      DATABASE_URL:         postgres://postgres:${DB_PASSWORD}@db:5432/futuradb
+      REDIS_HOST:           redis
+      AMQP_URL:             amqp://${RABBITMQ_USER:-futura}:${RABBITMQ_PASS:-futura_rabbit_2026}@rabbitmq:5672
+      WHATSAPP_SERVICE_URL: http://whatsapp:3007
+      SERVICE_NAME:         notification-service
+    depends_on:
+      db:       { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    restart: unless-stopped
+
+  # ─── Analytics Service ────────────────────────────────────
+  analytics:
+    build:
+      context: .
+      dockerfile: services/analytics/Dockerfile
+    ports:
+      - "3009:3009"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://postgres:${DB_PASSWORD}@db:5432/futuradb
+      REDIS_HOST:   redis
+      SERVICE_NAME: analytics-service
+    depends_on:
+      db:    { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+
+  # ─── Shipping Service ─────────────────────────────────────
+  shipping:
+    build:
+      context: .
+      dockerfile: services/shipping/Dockerfile
+    ports:
+      - "3005:3005"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://postgres:${DB_PASSWORD}@db:5432/futuradb
+      REDIS_HOST:   redis
+      AMQP_URL:     amqp://${RABBITMQ_USER:-futura}:${RABBITMQ_PASS:-futura_rabbit_2026}@rabbitmq:5672
+      SERVICE_NAME: shipping-service
+    depends_on:
+      db:       { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    restart: unless-stopped
+
+  # ─── Frontend ─────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:3001
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # ─── Monitoring (perfil opcional) ─────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+    profiles: ["monitoring"]
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-grafana2026}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3100:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    profiles: ["monitoring"]
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  uploads_data:
+  prometheus_data:
+  grafana_data:

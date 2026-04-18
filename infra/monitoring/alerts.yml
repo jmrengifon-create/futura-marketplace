@@ -1,0 +1,52 @@
+# infra/monitoring/alerts.yml — Alert rules
+groups:
+  - name: futura.marketplace
+    rules:
+      - alert: HighErrorRate
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Error rate > 5%"
+          description: "Service {{ $labels.service }} has error rate {{ $value | humanizePercentage }}"
+
+      - alert: HighLatencyP95
+        expr: histogram_quantile(0.95, rate(http_request_duration_ms_bucket[5m])) > 2000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P95 latency > 2 seconds"
+
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+
+      - alert: DatabaseConnectionsHigh
+        expr: pg_stat_database_numbackends > 80
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL connections > 80"
+
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis memory usage > 85%"
+
+      - alert: DisputesBacklog
+        expr: futura_disputes_open > 10
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 10 open disputes"
