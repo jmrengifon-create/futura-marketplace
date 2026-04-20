@@ -10,11 +10,16 @@ const Redis     = require('ioredis');
 const rateLimit = require('express-rate-limit');
 
 // Redis client (with fallback if not available)
-const redis = new Redis({
-  host: process.env.REDIS_HOST || 'redis',
-  port: parseInt(process.env.REDIS_PORT) || 6379,
-  retryStrategy: (times) => Math.min(times * 50, 2000),
-  lazyConnect: true,
+const redis = process.env.REDIS_URL
+  ? new Redis(process.env.REDIS_URL, {
+      retryStrategy: (times) => Math.min(times * 50, 2000),
+      lazyConnect: true,
+    })
+  : new Redis({
+      host: process.env.REDIS_HOST || 'redis',
+      port: parseInt(process.env.REDIS_PORT) || 6379,
+      retryStrategy: (times) => Math.min(times * 50, 2000),
+      lazyConnect: true,
 });
 redis.on('error', (e) => console.warn('[Redis] warn:', e.message));
 redis.connect().catch(() => console.warn('[Redis] Not connected, cache disabled'));
