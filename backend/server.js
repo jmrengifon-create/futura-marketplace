@@ -8,6 +8,7 @@ const upload   = require('./s3');
 const { MercadoPagoConfig, Preference } = require('mercadopago');
 const Redis     = require('ioredis');
 const rateLimit = require('express-rate-limit');
+const improvementsRouter = require('./routes/improvements');
 
 // Redis client (with fallback if not available)
 const redis = process.env.REDIS_URL
@@ -122,6 +123,7 @@ const notify = async (userId, type, title, message, link) => {
     );
   } catch (e) { console.error('notify:', e.message); }
 };
+app.use(improvementsRouter(pool, auth, role, notify, redis));
 
 // ─── AUTH ──────────────────────────────────────────────────
 app.post('/api/register', async (req, res) => {
