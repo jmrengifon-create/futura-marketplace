@@ -9,6 +9,7 @@ const { MercadoPagoConfig, Preference } = require('mercadopago');
 const Redis     = require('ioredis');
 const rateLimit = require('express-rate-limit');
 const improvementsRouter = require('./routes/improvements');
+const waInbox = require('./routes/wa-inbox');
 
 // Redis client (with fallback if not available)
 const redis = process.env.REDIS_URL
@@ -124,6 +125,7 @@ const notify = async (userId, type, title, message, link) => {
   } catch (e) { console.error('notify:', e.message); }
 };
 app.use(improvementsRouter(pool, auth, role, notify, redis));
+app.use(waInbox(pool, auth, role));
 
 // ─── AUTH ──────────────────────────────────────────────────
 app.post('/api/register', async (req, res) => {
