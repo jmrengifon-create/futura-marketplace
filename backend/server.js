@@ -10,6 +10,7 @@ const Redis     = require('ioredis');
 const rateLimit = require('express-rate-limit');
 const improvementsRouter = require('./routes/improvements');
 const waInbox = require('./routes/wa-inbox');
+const crmRouter = require('./routes/crm');
 
 // Redis client (with fallback if not available)
 const redis = process.env.REDIS_URL
@@ -126,6 +127,7 @@ const notify = async (userId, type, title, message, link) => {
 };
 app.use(improvementsRouter(pool, auth, role, notify, redis));
 app.use(waInbox(pool, auth, role));
+app.use(crmRouter(pool, auth, role, notify));
 
 // ─── AUTH ──────────────────────────────────────────────────
 app.post('/api/register', async (req, res) => {
