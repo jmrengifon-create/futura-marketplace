@@ -11,6 +11,7 @@ const rateLimit = require('express-rate-limit');
 const improvementsRouter = require('./routes/improvements');
 const waInbox = require('./routes/wa-inbox');
 const crmRouter = require('./routes/crm');
+const phase1 = require('./routes/phase1');
 
 // Redis client (with fallback if not available)
 const redis = process.env.REDIS_URL
