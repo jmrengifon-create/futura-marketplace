@@ -101,7 +101,7 @@ export default function AdminCRM() {
     ['overview', '📊 Resumen'],
     ['buyers',   `👥 Compradores (${buyers.length})`],
     ['machines', `🖨️ Catálogo (${machines.length})`],
-    ['alerts',   `🔔 Alertas${overdueAlerts.length>0?' ('+overdueAlerts.length+')'':''}`],
+    ['alerts',   `🔔 Alertas${overdueAlerts.length > 0 ? ' (' + overdueAlerts.length + ')' : ''}`],
     ...(selectedBuyer && buyerDetail ? [['buyer', `👤 ${buyerDetail.buyer?.name?.split(' ')[0]}`]] : []),
   ];
 
