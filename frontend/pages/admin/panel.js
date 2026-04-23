@@ -116,6 +116,8 @@ export default function AdminFull() {
               <a href="/admin/stats" style={{ background:'linear-gradient(135deg,#3B75C0,#6FA8D4)', color:'white', padding:'7px 16px', borderRadius:8, textDecoration:'none', fontSize:12, fontWeight:700 }}>📊 Power BI</a>
               <a href="/admin/disputes" style={{ background:'rgba(239,68,68,0.2)', color:'#fca5a5', padding:'7px 14px', borderRadius:8, textDecoration:'none', fontSize:12, fontWeight:600 }}>⚖️ Disputas</a>
               <a href="/admin/whatsapp" style={{ background:'rgba(37,211,102,0.15)', color:'#25d366', padding:'7px 14px', borderRadius:8, textDecoration:'none', fontSize:12, fontWeight:600 }}>📱 WhatsApp</a>
+              <a href="/admin/crm" style={{ background:'rgba(124,58,237,0.15)', color:'#7c3aed', padding:'7px 14px', borderRadius:8, textDecoration:'none', fontSize:12, fontWeight:600 }}>🖨️ CRM</a>
+              <a href="/admin/semaforo" style={{ background:'rgba(21,128,61,0.15)', color:'#15803d', padding:'7px 14px', borderRadius:8, textDecoration:'none', fontSize:12, fontWeight:600 }}>🚦 Semáforo</a>
   
               <a href="/" style={{ color:'#64748b', textDecoration:'none', fontSize:12, padding:'7px 12px' }}>← Inicio</a>
             </div>
