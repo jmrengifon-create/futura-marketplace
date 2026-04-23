@@ -1,5 +1,6 @@
 require('dotenv').config();
 const phase1 = require('./routes/phase1');
+app.use(phase1(pool, auth, role, notify));
 const express  = require('express');
 const bcrypt   = require('bcrypt');
 const jwt      = require('jsonwebtoken');
