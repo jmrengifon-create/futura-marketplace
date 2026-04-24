@@ -116,6 +116,13 @@ export default function AdminFull() {
               <a href="/admin/stats" style={{ background:'linear-gradient(135deg,#3B75C0,#6FA8D4)', color:'white', padding:'7px 16px', borderRadius:8, textDecoration:'none', fontSize:12, fontWeight:700 }}>📊 Power BI</a>
               <a href="/admin/disputes" style={{ background:'rgba(239,68,68,0.2)', color:'#fca5a5', padding:'7px 14px', borderRadius:8, textDecoration:'none', fontSize:12, fontWeight:600 }}>⚖️ Disputas</a>
               <a href="/admin/whatsapp" style={{ background:'rgba(37,211,102,0.15)', color:'#25d366', padding:'7px 14px', borderRadius:8, textDecoration:'none', fontSize:12, fontWeight:600 }}>📱 WhatsApp</a>
+              <a href="/admin/semaforo" style={{ background:'rgba(34,197,94,0.15)', color:'#15803d', padding:'7px 14px', borderRadius:8, textDecoration:'none', fontSize:12, fontWeight:600 }}>🚦 Semáforo</a>
+              <a href="/admin/credits" style={{ background:'rgba(59,117,192,0.15)', color:'#3B75C0', padding:'7px 14px', borderRadius:8, textDecoration:'none', fontSize:12, fontWeight:600 }}>💳 Créditos</a>
+              <a href="/admin/marketing" style={{ background:'rgba(202,138,4,0.15)', color:'#ca8a04', padding:'7px 14px', borderRadius:8, textDecoration:'none', fontSize:12, fontWeight:600 }}>📢 Marketing</a>
+              <a href="/admin/inventory" style={{ background:'rgba(124,58,237,0.15)', color:'#7c3aed', padding:'7px 14px', borderRadius:8, textDecoration:'none', fontSize:12, fontWeight:600 }}>📦 Inventario</a>
+              <a href="/admin/technicians" style={{ background:'rgba(234,88,12,0.15)', color:'#ea580c', padding:'7px 14px', borderRadius:8, textDecoration:'none', fontSize:12, fontWeight:600 }}>🔧 Técnicos</a>
+              <a href="/admin/risk" style={{ background:'rgba(220,38,38,0.15)', color:'#dc2626', padding:'7px 14px', borderRadius:8, textDecoration:'none', fontSize:12, fontWeight:600 }}>🔍 Riesgo</a>
+              <a href="/admin/offers" style={{ background:'rgba(16,185,129,0.15)', color:'#059669', padding:'7px 14px', borderRadius:8, textDecoration:'none', fontSize:12, fontWeight:600 }}>🏷️ Ofertas</a>
               <a href="/admin/crm" style={{ background:'rgba(124,58,237,0.15)', color:'#7c3aed', padding:'7px 14px', borderRadius:8, textDecoration:'none', fontSize:12, fontWeight:600 }}>🖨️ CRM</a>
               <a href="/admin/semaforo" style={{ background:'rgba(21,128,61,0.15)', color:'#15803d', padding:'7px 14px', borderRadius:8, textDecoration:'none', fontSize:12, fontWeight:600 }}>🚦 Semáforo</a>
   
