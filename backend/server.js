@@ -12,6 +12,11 @@ const Redis     = require('ioredis');
 const rateLimit = require('express-rate-limit');
 const improvementsRouter = require('./routes/improvements');
 const waInbox = require('./routes/wa-inbox');
+const phase1 = require('./routes/phase1');
+const phase2 = require('./routes/phase2');
+const phase3 = require('./routes/phase3');
+const phase4 = require('./routes/phase4');
+const phase5 = require('./routes/phase5');
 const crmRouter = require('./routes/crm');
 
 // Redis client (with fallback if not available)
@@ -129,6 +134,11 @@ const notify = async (userId, type, title, message, link) => {
 };
 app.use(improvementsRouter(pool, auth, role, notify, redis));
 app.use(waInbox(pool, auth, role));
+app.use(phase1(pool, auth, role, notify));
+app.use(phase2(pool, auth, role, notify));
+app.use(phase3(pool, auth, role, notify));
+app.use(phase4(pool, auth, role, notify));
+app.use(phase5(pool, auth, role, notify));
 app.use(crmRouter(pool, auth, role, notify));
 
 // ─── AUTH ──────────────────────────────────────────────────
