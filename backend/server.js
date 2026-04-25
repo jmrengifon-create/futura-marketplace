@@ -18,10 +18,6 @@ const phase2 = require('./routes/phase2');
 const phase3 = require('./routes/phase3');
 const phase4 = require('./routes/phase4');
 const phase5 = require('./routes/phase5');
-const phase2 = require('./routes/phase2');
-const phase3 = require('./routes/phase3');
-const phase4 = require('./routes/phase4');
-const phase5 = require('./routes/phase5');
 // ─── Redis ────────────────────────────────────────────────
 const redis = process.env.REDIS_URL
   ? new Redis(process.env.REDIS_URL, {
