@@ -18,6 +18,7 @@ const phase2 = require('./routes/phase2');
 const phase3 = require('./routes/phase3');
 const phase4 = require('./routes/phase4');
 const phase5 = require('./routes/phase5');
+
 // ─── Redis ────────────────────────────────────────────────
 const redis = process.env.REDIS_URL
   ? new Redis(process.env.REDIS_URL, {
@@ -101,10 +102,7 @@ app.use((req, res, next) => {
 
 app.use(cors());
 app.use('/uploads', express.static('/app/uploads'));
-app.use(phase2(pool, auth, role, notify));
-app.use(phase3(pool, auth, role, notify));
-app.use(phase4(pool, auth, role, notify));
-app.use(phase5(pool, auth, role, notify));
+
 const mpClient = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN || 'TEST-000' });
 
 // ─── Middleware ────────────────────────────────────────────
