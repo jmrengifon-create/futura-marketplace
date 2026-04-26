@@ -146,6 +146,221 @@ app.use(improvementsRouter(pool, auth, role, notify, redis));
 app.use(waInbox(pool, auth, role));
 app.use(phase1(pool, auth, role, notify));
 app.use(phase2(pool, auth, role, notify));
+// ── INVENTARIO ──────────────────────────────────────────
+app.get('/api/admin/inventory', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const { location_id } = req.query;
+    let sql = `SELECT i.*, l.name AS location_name FROM inventory i
+               JOIN locations l ON l.id = i.location_id`;
+    const params = [];
+    if (location_id) { sql += ' WHERE i.location_id=$1'; params.push(location_id); }
+    sql += ' ORDER BY i.created_at DESC';
+    const r = await pool.query(sql, params);
+    res.json(r.rows);
+  } catch(e) { console.error('[inventory]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/admin/inventory', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const { location_id, item_name, item_type, quantity, min_quantity, unit_cost, unit_price } = req.body;
+    const qr_code = 'QR-' + Date.now() + '-' + Math.random().toString(36).substr(2,6).toUpperCase();
+    const r = await pool.query(
+      `INSERT INTO inventory(location_id,item_name,item_type,qr_code,quantity,min_quantity,unit_cost,unit_price)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [location_id, item_name, item_type||'PRODUCTO', qr_code,
+       quantity||0, min_quantity||1, unit_cost||0, unit_price||0]
+    );
+    res.json(r.rows[0]);
+  } catch(e) { console.error('[inventory POST]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.put('/api/admin/inventory/:id', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const { quantity, min_quantity, unit_cost, unit_price, status } = req.body;
+    await pool.query(
+      `UPDATE inventory SET quantity=$1,min_quantity=$2,unit_cost=$3,unit_price=$4,status=$5 WHERE id=$6`,
+      [quantity, min_quantity, unit_cost, unit_price, status||'DISPONIBLE', req.params.id]
+    );
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/admin/inventory/:id/movement', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const { movement_type, quantity, notes } = req.body;
+    const item = await pool.query('SELECT * FROM inventory WHERE id=$1', [req.params.id]);
+    if (!item.rows.length) return res.status(404).json({ error: 'Item no encontrado' });
+    const before = item.rows[0].quantity;
+    const after = movement_type === 'ENTRADA' ? before + parseInt(quantity) : before - parseInt(quantity);
+    await pool.query(
+      `INSERT INTO inventory_movements(inventory_id,location_id,movement_type,quantity,quantity_before,quantity_after,registered_by,notes)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [req.params.id, item.rows[0].location_id, movement_type, quantity, before, after, req.user.id, notes||'']
+    );
+    await pool.query('UPDATE inventory SET quantity=$1 WHERE id=$2', [after, req.params.id]);
+    res.json({ ok: true, quantity_after: after });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// ── TÉCNICOS ─────────────────────────────────────────────
+app.get('/api/admin/technicians', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const r = await pool.query('SELECT * FROM technicians WHERE active=TRUE ORDER BY name');
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/admin/technicians', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const { name, phone, specialties } = req.body;
+    if (!name) return res.status(400).json({ error: 'Nombre requerido' });
+    const r = await pool.query(
+      `INSERT INTO technicians(name,phone,specialties,status,active)
+       VALUES($1,$2,$3,'LIBRE',TRUE) RETURNING *`,
+      [name, phone||'', specialties||[]]
+    );
+    res.json(r.rows[0]);
+  } catch(e) { console.error('[tech POST]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.put('/api/admin/technicians/:id/status', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const { status, current_client, current_address, commission_destination,
+            commission_return_date, permission_type, permission_until, notes } = req.body;
+    await pool.query(
+      `UPDATE technicians SET status=$1,current_client=$2,current_address=$3,
+       commission_destination=$4,commission_return_date=$5,permission_type=$6,
+       permission_until=$7,notes=$8 WHERE id=$9`,
+      [status, current_client||null, current_address||null, commission_destination||null,
+       commission_return_date||null, permission_type||null, permission_until||null,
+       notes||null, req.params.id]
+    );
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.get('/api/admin/technicians/stats', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT
+        COUNT(*) AS total,
+        COUNT(CASE WHEN status='TRABAJANDO' THEN 1 END) AS working,
+        COUNT(CASE WHEN status='COMISION'   THEN 1 END) AS on_commission,
+        COUNT(CASE WHEN status='PERMISO'    THEN 1 END) AS on_leave,
+        COUNT(CASE WHEN status='LIBRE'      THEN 1 END) AS available
+      FROM technicians WHERE active=TRUE`);
+    res.json({ counts: r.rows[0] });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.get('/api/admin/technical-services', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const { status } = req.query;
+    let sql = `SELECT ts.*, t.name AS technician_name FROM technical_services ts
+               JOIN technicians t ON t.id=ts.technician_id`;
+    const params = [];
+    if (status) { sql += ' WHERE ts.status=$1'; params.push(status); }
+    sql += ' ORDER BY ts.created_at DESC';
+    const r = await pool.query(sql, params);
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/admin/technical-services', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const { technician_id, client_name, client_address, client_phone,
+            service_type, scheduled_at, problem_reported } = req.body;
+    if (!technician_id || !client_name) return res.status(400).json({ error: 'Faltan datos' });
+    const tech = await pool.query('SELECT name FROM technicians WHERE id=$1', [technician_id]);
+    const r = await pool.query(
+      `INSERT INTO technical_services(technician_id,client_name,client_address,client_phone,
+       service_type,scheduled_at,problem_reported,status,technician_name)
+       VALUES($1,$2,$3,$4,$5,$6,$7,'EN_CURSO',$8) RETURNING *`,
+      [technician_id, client_name, client_address||'', client_phone||'',
+       service_type||'MANTENIMIENTO', scheduled_at||null, problem_reported||'',
+       tech.rows[0]?.name||'']
+    );
+    await pool.query(
+      `UPDATE technicians SET status='TRABAJANDO',current_client=$1,current_address=$2 WHERE id=$3`,
+      [client_name, client_address||'', technician_id]
+    );
+    res.json(r.rows[0]);
+  } catch(e) { console.error('[service POST]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+// ── MARKETING ────────────────────────────────────────────
+app.get('/api/admin/social-posts', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const r = await pool.query('SELECT * FROM social_posts ORDER BY created_at DESC LIMIT 20');
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/admin/social-posts', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const { title, content, media_url, platforms, scheduled_at } = req.body;
+    const r = await pool.query(
+      `INSERT INTO social_posts(admin_id,title,content,media_url,platforms,scheduled_at,status)
+       VALUES($1,$2,$3,$4,$5,$6,'PROGRAMADO') RETURNING *`,
+      [req.user.id, title, content, media_url||null, platforms||['FACEBOOK'], scheduled_at||null]
+    );
+    res.json(r.rows[0]);
+  } catch(e) { console.error('[social POST]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.get('/api/admin/email-campaigns', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const r = await pool.query('SELECT * FROM email_campaigns ORDER BY created_at DESC');
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/admin/email-campaigns', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const { subject, content, audience } = req.body;
+    const r = await pool.query(
+      `INSERT INTO email_campaigns(admin_id,subject,content,audience,status)
+       VALUES($1,$2,$3,$4,'BORRADOR') RETURNING *`,
+      [req.user.id, subject, content, audience||'ALL']
+    );
+    res.json(r.rows[0]);
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.get('/api/email-subscribers', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const r = await pool.query('SELECT COUNT(*) AS total, COUNT(CASE WHEN opted_in THEN 1 END) AS active FROM email_subscribers');
+    res.json(r.rows[0]);
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// ── BOLETAS COMPRADOR ─────────────────────────────────────
+app.get('/api/buyer/receipts', auth, async (req, res) => {
+  try {
+    const r = await pool.query(
+      'SELECT * FROM electronic_receipts WHERE buyer_id=$1 ORDER BY issued_at DESC',
+      [req.user.id]
+    );
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// ── CRÉDITOS ─────────────────────────────────────────────
+app.get('/api/admin/credits', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT bc.*, u.name AS buyer_name, u.email AS buyer_email
+      FROM buyer_credits bc JOIN users u ON u.id=bc.buyer_id
+      ORDER BY bc.created_at DESC`).catch(() => ({ rows: [] }));
+    const stats = await pool.query(`
+      SELECT
+        COUNT(CASE WHEN status='ACTIVO' THEN 1 END) AS activos,
+        COUNT(CASE WHEN status='PENDIENTE' THEN 1 END) AS pendientes,
+        COALESCE(SUM(CASE WHEN status='ACTIVO' THEN amount END),0) AS portfolio
+      FROM buyer_credits`).catch(() => ({ rows: [{ activos:0, pendientes:0, portfolio:0 }] }));
+    res.json({ credits: r.rows, stats: stats.rows[0] });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
 app.get('/api/locations', async (req, res) => {
   try {
     const r = await pool.query('SELECT * FROM locations WHERE active=TRUE ORDER BY id');
