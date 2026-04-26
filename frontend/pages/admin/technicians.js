@@ -1,10 +1,15 @@
 // frontend/pages/admin/technicians.js — Panel de Personal Técnico
 import { useEffect, useState } from 'react';
 import { apiFetch } from '../../lib/api';
-const [showNewTechnician, setShowNewTechnician] = useState(false);
-const [newTech, setNewTech] = useState({ name: '', phone: '', specialties: '' });
-const STATUS_C = { TRABAJANDO:{bg:'#f0fdf4',c:'#15803d',dot:'#22c55e',label:'🟢 Trabajando'}, COMISION:{bg:'#eff6ff',c:'#3B75C0',dot:'#3B75C0',label:'🔵 Comisión'}, PERMISO:{bg:'#fefce8',c:'#ca8a04',dot:'#eab308',label:'🟡 Permiso'}, LIBRE:{bg:'#f8fafc',c:'#64748b',dot:'#94a3b8',label:'⚪ Libre'} };
-const fmt = d => d ? new Date(d).toLocaleDateString('es-PE',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+
+const STATUS_C = {
+  TRABAJANDO:{ bg:'#f0fdf4', c:'#15803d', dot:'#22c55e', label:'🟢 Trabajando' },
+  COMISION:  { bg:'#eff6ff', c:'#3B75C0', dot:'#3B75C0', label:'🔵 Comisión'  },
+  PERMISO:   { bg:'#fefce8', c:'#ca8a04', dot:'#eab308', label:'🟡 Permiso'   },
+  LIBRE:     { bg:'#f8fafc', c:'#64748b', dot:'#94a3b8', label:'⚪ Libre'      }
+};
+
+const fmt   = d => d ? new Date(d).toLocaleDateString('es-PE',{day:'2-digit',month:'short',year:'numeric'}) : '—';
 const fmtDT = d => d ? new Date(d).toLocaleString('es-PE',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
 
 export default function AdminTechnicians() {
@@ -14,9 +19,19 @@ export default function AdminTechnicians() {
   const [stats, setStats]   = useState(null);
   const [msg, setMsg]       = useState('');
   const [selected, setSelected] = useState(null);
-  const [statusForm, setStatusForm] = useState({ status:'LIBRE', current_client:'', current_address:'', commission_destination:'', commission_return_date:'', permission_type:'', permission_until:'', notes:'' });
-  const [serviceForm, setServiceForm] = useState({ technician_id:'', client_name:'', client_address:'', client_phone:'', service_type:'MANTENIMIENTO', scheduled_at:'', problem_reported:'' });
-  const [showNewService, setShowNewService] = useState(false);
+  const [showNewService, setShowNewService]       = useState(false);
+  const [showNewTechnician, setShowNewTechnician] = useState(false);
+  const [newTech, setNewTech] = useState({ name:'', phone:'', specialties:'' });
+
+  const [statusForm, setStatusForm] = useState({
+    status:'LIBRE', current_client:'', current_address:'',
+    commission_destination:'', commission_return_date:'',
+    permission_type:'', permission_until:'', notes:''
+  });
+  const [serviceForm, setServiceForm] = useState({
+    technician_id:'', client_name:'', client_address:'', client_phone:'',
+    service_type:'MANTENIMIENTO', scheduled_at:'', problem_reported:''
+  });
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -33,7 +48,9 @@ export default function AdminTechnicians() {
         apiFetch('/api/admin/technical-services?status=EN_CURSO').catch(()=>[]),
         apiFetch('/api/admin/technicians/stats').catch(()=>null),
       ]);
-      setTechs(Array.isArray(t)?t:[]); setServices(Array.isArray(s)?s:[]); setStats(st);
+      setTechs(Array.isArray(t)?t:[]);
+      setServices(Array.isArray(s)?s:[]);
+      setStats(st);
     } catch {}
   };
 
@@ -58,7 +75,32 @@ export default function AdminTechnicians() {
     } catch(err) { setMsg('❌ '+err.message); }
   };
 
-  const TABS = [['panel',`👥 Panel (${techs.length})`],['services',`🔧 Servicios (${services.length})`],['stats','📊 Estadísticas']];
+  const createTechnician = async () => {
+    if (!newTech.name.trim()) return alert('El nombre es obligatorio');
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/api/admin/technicians`, {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${token}` },
+        body: JSON.stringify({
+          name: newTech.name.trim(),
+          phone: newTech.phone.trim(),
+          specialties: newTech.specialties.split(',').map(s=>s.trim()).filter(Boolean)
+        })
+      });
+      if (!res.ok) throw new Error('Error al crear');
+      setShowNewTechnician(false);
+      setNewTech({ name:'', phone:'', specialties:'' });
+      setMsg('✅ Técnico creado correctamente');
+      loadAll();
+    } catch(e) { alert('Error al crear técnico: ' + e.message); }
+  };
+
+  const TABS = [
+    ['panel',   `👥 Panel (${techs.length})`],
+    ['services',`🔧 Servicios (${services.length})`],
+    ['stats',   '📊 Estadísticas']
+  ];
 
   return (
     <div style={{ fontFamily:"'Segoe UI',sans-serif", background:'#f0f4f8', minHeight:'100vh' }}>
@@ -67,12 +109,14 @@ export default function AdminTechnicians() {
         .btn{background:linear-gradient(135deg,#3B75C0,#6FA8D4);color:white;border:none;border-radius:10px;padding:8px 16px;font-weight:700;cursor:pointer;font-size:13px}
         .btn:hover{opacity:0.9} .btn-sm{padding:5px 10px;font-size:12px;border-radius:8px}
         .btn-green{background:linear-gradient(135deg,#15803d,#22c55e)}
+        .btn-blue{background:linear-gradient(135deg,#1A56DB,#3B75C0)}
         .card{background:white;border-radius:16px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,0.06)}
         .modal-bg{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000}
         .modal{background:white;border-radius:16px;padding:28px;width:520px;max-width:95vw;max-height:90vh;overflow-y:auto}
         input:focus,textarea:focus,select:focus{outline:none;border-color:#3B75C0!important}
       `}</style>
 
+      {/* HEADER */}
       <header style={{ background:'linear-gradient(135deg,#0D3B87,#1A4A8A)', boxShadow:'0 4px 24px rgba(0,0,0,0.4)' }}>
         <div style={{ maxWidth:1300, margin:'0 auto', padding:'0 24px' }}>
           <div style={{ display:'flex', alignItems:'center', height:52, justifyContent:'space-between' }}>
@@ -88,92 +132,30 @@ export default function AdminTechnicians() {
                   <span style={{ color:'#94a3b8' }}>⚪ {stats.counts.available} libres</span>
                 </div>
               )}
-  <button
-  onClick={() => setShowNewTechnician(true)}
-  style={{
-    background: '#1A56DB',
-    color: 'white',
-    border: 'none',
-    borderRadius: '8px',
-    padding: '10px 20px',
-    cursor: 'pointer',
-    fontWeight: 'bold',
-    marginRight: '10px'
-  }}
->
-  + Nuevo Técnico
-</button> 
+              <button onClick={()=>setShowNewTechnician(true)} className="btn btn-sm btn-blue">+ Nuevo Técnico</button>
               <button onClick={()=>setShowNewService(true)} className="btn btn-sm btn-green">+ Nuevo Servicio</button>
             </div>
           </div>
+
+          {/* TABS */}
           <div style={{ display:'flex', gap:2 }}>
             {TABS.map(([key,label])=>(
               <button key={key} onClick={()=>setTab(key)} style={{ padding:'8px 14px', border:'none', background:'transparent', cursor:'pointer', fontSize:13, fontWeight:tab===key?700:400, color:tab===key?'white':'#64748b', borderBottom:tab===key?'3px solid #3B75C0':'3px solid transparent' }}>{label}</button>
             ))}
           </div>
-{showNewTechnician && (
-  <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}>
-    <div style={{background:'white',borderRadius:'12px',padding:'32px',width:'400px'}}>
-      <h3 style={{marginBottom:'20px'}}>👨‍🔧 Nuevo Técnico</h3>
-      <input
-        placeholder="Nombre completo *"
-        value={newTech.name}
-        onChange={e => setNewTech({...newTech, name: e.target.value})}
-        style={{width:'100%',padding:'10px',marginBottom:'12px',border:'1px solid #ddd',borderRadius:'8px',boxSizing:'border-box'}}
-      />
-      <input
-        placeholder="Teléfono"
-        value={newTech.phone}
-        onChange={e => setNewTech({...newTech, phone: e.target.value})}
-        style={{width:'100%',padding:'10px',marginBottom:'12px',border:'1px solid #ddd',borderRadius:'8px',boxSizing:'border-box'}}
-      />
-      <input
-        placeholder="Especialidades (ej: Impresoras, Plotters)"
-        value={newTech.specialties}
-        onChange={e => setNewTech({...newTech, specialties: e.target.value})}
-        style={{width:'100%',padding:'10px',marginBottom:'20px',border:'1px solid #ddd',borderRadius:'8px',boxSizing:'border-box'}}
-      />
-      <div style={{display:'flex',gap:'12px'}}>
-        <button
-          onClick={async () => {
-            if (!newTech.name) return alert('El nombre es obligatorio');
-            try {
-              const token = localStorage.getItem('token');
-              await fetch('/api/admin/technicians', {
-                method: 'POST',
-                headers: {'Content-Type':'application/json','Authorization':`Bearer ${token}`},
-                body: JSON.stringify({
-                  name: newTech.name,
-                  phone: newTech.phone,
-                  specialties: newTech.specialties.split(',').map(s => s.trim()).filter(Boolean)
-                })
-              });
-              setShowNewTechnician(false);
-              setNewTech({ name: '', phone: '', specialties: '' });
-              window.location.reload();
-            } catch(e) { alert('Error al crear técnico'); }
-          }}
-          style={{flex:1,background:'#10B981',color:'white',border:'none',borderRadius:'8px',padding:'12px',cursor:'pointer',fontWeight:'bold'}}
-        >
-          ✅ Crear Técnico
-        </button>
-        <button
-          onClick={() => setShowNewTechnician(false)}
-          style={{flex:1,background:'#E5E7EB',color:'#374151',border:'none',borderRadius:'8px',padding:'12px',cursor:'pointer'}}
-        >
-          Cancelar
-        </button>
-      </div>
-    </div>
-  </div>
-)}    
         </div>
       </header>
 
+      {/* CONTENT */}
       <div style={{ maxWidth:1300, margin:'20px auto', padding:'0 24px' }}>
-        {msg && <div style={{ padding:'10px 14px', borderRadius:10, marginBottom:14, fontWeight:600, background:msg.startsWith('✅')?'#f0fdf4':'#fef2f2', color:msg.startsWith('✅')?'#15803d':'#dc2626', display:'flex', justifyContent:'space-between' }}><span>{msg}</span><button onClick={()=>setMsg('')} style={{ background:'none',border:'none',cursor:'pointer' }}>×</button></div>}
+        {msg && (
+          <div style={{ padding:'10px 14px', borderRadius:10, marginBottom:14, fontWeight:600, background:msg.startsWith('✅')?'#f0fdf4':'#fef2f2', color:msg.startsWith('✅')?'#15803d':'#dc2626', display:'flex', justifyContent:'space-between' }}>
+            <span>{msg}</span>
+            <button onClick={()=>setMsg('')} style={{ background:'none',border:'none',cursor:'pointer' }}>×</button>
+          </div>
+        )}
 
-        {/* PANEL DE TÉCNICOS */}
+        {/* PANEL */}
         {tab === 'panel' && (
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))', gap:14 }}>
             {techs.map(t => {
@@ -187,7 +169,7 @@ export default function AdminTechnicians() {
                       </div>
                       <div>
                         <div style={{ fontWeight:800, fontSize:14, color:'#0D3B87' }}>{t.name}</div>
-                        <div style={{ fontSize:11, color:'#94a3b8' }}>{t.phone||t.user_phone||'Sin teléfono'}</div>
+                        <div style={{ fontSize:11, color:'#94a3b8' }}>{t.phone||'Sin teléfono'}</div>
                       </div>
                     </div>
                     <span style={{ background:SC.bg, color:SC.c, padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:700, animation:t.status==='TRABAJANDO'?'pulse 2s infinite':'' }}>{SC.label}</span>
@@ -199,19 +181,19 @@ export default function AdminTechnicians() {
                     </div>
                   )}
 
-                  {t.status === 'TRABAJANDO' && t.current_client && (
+                  {t.status==='TRABAJANDO' && t.current_client && (
                     <div style={{ background:'#f0fdf4', borderRadius:8, padding:'8px 10px', marginBottom:8, fontSize:12 }}>
                       <div style={{ fontWeight:700, color:'#15803d' }}>👤 {t.current_client}</div>
                       {t.current_address && <div style={{ color:'#475569' }}>📍 {t.current_address}</div>}
                     </div>
                   )}
-                  {t.status === 'COMISION' && (
+                  {t.status==='COMISION' && (
                     <div style={{ background:'#eff6ff', borderRadius:8, padding:'8px 10px', marginBottom:8, fontSize:12 }}>
                       <div style={{ fontWeight:700, color:'#3B75C0' }}>✈️ {t.commission_destination}</div>
                       <div style={{ color:'#64748b' }}>Retorno: {fmt(t.commission_return_date)}</div>
                     </div>
                   )}
-                  {t.status === 'PERMISO' && (
+                  {t.status==='PERMISO' && (
                     <div style={{ background:'#fefce8', borderRadius:8, padding:'8px 10px', marginBottom:8, fontSize:12 }}>
                       <div style={{ fontWeight:700, color:'#ca8a04' }}>🏖️ {t.permission_type}</div>
                       <div style={{ color:'#64748b' }}>Hasta: {fmt(t.permission_until)}</div>
@@ -228,8 +210,9 @@ export default function AdminTechnicians() {
             {techs.length === 0 && (
               <div style={{ gridColumn:'1/-1', textAlign:'center', padding:'48px', color:'#94a3b8' }}>
                 <div style={{ fontSize:48 }}>👷</div>
-                <p>Sin técnicos registrados todavía.</p>
-                <p style={{ fontSize:12 }}>Agrega técnicos desde la base de datos o contacta al equipo de desarrollo.</p>
+                <p style={{ fontWeight:700, marginBottom:8 }}>Sin técnicos registrados todavía.</p>
+                <p style={{ fontSize:12, marginBottom:20 }}>Usa el botón <strong>"+ Nuevo Técnico"</strong> para agregar técnicos al sistema.</p>
+                <button onClick={()=>setShowNewTechnician(true)} className="btn btn-blue" style={{ padding:'12px 24px' }}>+ Agregar primer técnico</button>
               </div>
             )}
           </div>
@@ -242,11 +225,13 @@ export default function AdminTechnicians() {
               <h3 style={{ margin:0, fontSize:15, fontWeight:800, color:'#0D3B87' }}>🔧 Servicios Técnicos</h3>
             </div>
             <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
-              <thead><tr style={{ background:'#f8fafc', borderBottom:'1px solid #e5e7eb' }}>
-                {['Técnico','Cliente','Dirección','Tipo','Estado','Programado','Costo'].map(h=>(
-                  <th key={h} style={{ padding:'10px 12px', textAlign:'left', fontSize:10, color:'#64748b', fontWeight:700, textTransform:'uppercase' }}>{h}</th>
-                ))}
-              </tr></thead>
+              <thead>
+                <tr style={{ background:'#f8fafc', borderBottom:'1px solid #e5e7eb' }}>
+                  {['Técnico','Cliente','Dirección','Tipo','Estado','Programado','Costo'].map(h=>(
+                    <th key={h} style={{ padding:'10px 12px', textAlign:'left', fontSize:10, color:'#64748b', fontWeight:700, textTransform:'uppercase' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
               <tbody>
                 {services.map(s=>(
                   <tr key={s.id} style={{ borderBottom:'1px solid #f8fafc' }}>
@@ -259,7 +244,9 @@ export default function AdminTechnicians() {
                     <td style={{ padding:'10px 12px', fontWeight:s.total_cost>0?700:400, color:s.total_cost>0?'#15803d':'#94a3b8' }}>{s.total_cost>0?`S/ ${s.total_cost}`:'—'}</td>
                   </tr>
                 ))}
-                {services.length===0 && <tr><td colSpan={7} style={{ padding:'32px', textAlign:'center', color:'#94a3b8' }}>Sin servicios activos. Usa "+ Nuevo Servicio" para asignar uno.</td></tr>}
+                {services.length===0 && (
+                  <tr><td colSpan={7} style={{ padding:'32px', textAlign:'center', color:'#94a3b8' }}>Sin servicios activos. Usa "+ Nuevo Servicio" para asignar uno.</td></tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -268,7 +255,11 @@ export default function AdminTechnicians() {
         {/* ESTADÍSTICAS */}
         {tab === 'stats' && stats && (
           <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12 }}>
-            {[['🟢','Trabajando',stats.counts?.working||0,'#f0fdf4','#15803d'],['✈️','En Comisión',stats.counts?.on_commission||0,'#eff6ff','#3B75C0'],['🏖️','Con Permiso',stats.counts?.on_leave||0,'#fefce8','#ca8a04'],['⚪','Disponibles',stats.counts?.available||0,'#f8fafc','#64748b']].map(([i,l,v,bg,c])=>(
+            {[['🟢','Trabajando',stats.counts?.working||0,'#f0fdf4','#15803d'],
+              ['✈️','En Comisión',stats.counts?.on_commission||0,'#eff6ff','#3B75C0'],
+              ['🏖️','Con Permiso',stats.counts?.on_leave||0,'#fefce8','#ca8a04'],
+              ['⚪','Disponibles',stats.counts?.available||0,'#f8fafc','#64748b']
+            ].map(([i,l,v,bg,c])=>(
               <div key={l} className="card" style={{ background:bg, textAlign:'center' }}>
                 <div style={{ fontSize:32 }}>{i}</div>
                 <div style={{ fontSize:10, color:c, fontWeight:700, textTransform:'uppercase', marginTop:6 }}>{l}</div>
@@ -279,7 +270,41 @@ export default function AdminTechnicians() {
         )}
       </div>
 
-      {/* Modal cambio de estado */}
+      {/* MODAL — Nuevo Técnico */}
+      {showNewTechnician && (
+        <div className="modal-bg" onClick={e=>e.target===e.currentTarget&&setShowNewTechnician(false)}>
+          <div className="modal">
+            <h3 style={{ margin:'0 0 20px', fontSize:16, fontWeight:800, color:'#0D3B87' }}>👨‍🔧 Nuevo Técnico</h3>
+            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+              <input
+                placeholder="Nombre completo *"
+                value={newTech.name}
+                onChange={e=>setNewTech({...newTech, name:e.target.value})}
+                style={{ padding:'10px 14px', borderRadius:10, border:'1.5px solid #e5e7eb', fontSize:14 }}
+              />
+              <input
+                placeholder="Teléfono (ej: 999888777)"
+                value={newTech.phone}
+                onChange={e=>setNewTech({...newTech, phone:e.target.value})}
+                style={{ padding:'10px 14px', borderRadius:10, border:'1.5px solid #e5e7eb', fontSize:14 }}
+              />
+              <input
+                placeholder="Especialidades separadas por coma (ej: Impresoras, Plotters, UV)"
+                value={newTech.specialties}
+                onChange={e=>setNewTech({...newTech, specialties:e.target.value})}
+                style={{ padding:'10px 14px', borderRadius:10, border:'1.5px solid #e5e7eb', fontSize:14 }}
+              />
+              <p style={{ fontSize:11, color:'#94a3b8', margin:0 }}>El técnico se creará con estado "Libre" y podrás asignarle servicios inmediatamente.</p>
+              <div style={{ display:'flex', gap:8 }}>
+                <button onClick={createTechnician} className="btn btn-green" style={{ flex:1, padding:12 }}>✅ Crear Técnico</button>
+                <button onClick={()=>setShowNewTechnician(false)} style={{ flex:1, padding:12, background:'#f8fafc', border:'1px solid #e5e7eb', borderRadius:10, cursor:'pointer' }}>Cancelar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL — Cambio de estado */}
       {selected && (
         <div className="modal-bg" onClick={e=>e.target===e.currentTarget&&setSelected(null)}>
           <div className="modal">
@@ -313,7 +338,7 @@ export default function AdminTechnicians() {
         </div>
       )}
 
-      {/* Modal nuevo servicio */}
+      {/* MODAL — Nuevo Servicio */}
       {showNewService && (
         <div className="modal-bg" onClick={e=>e.target===e.currentTarget&&setShowNewService(false)}>
           <div className="modal">
