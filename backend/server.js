@@ -1259,6 +1259,15 @@ app.post('/api/webhook/mp', async (req, res) => {
 // ═══════════════════════════════════════════════════════════
 // START
 // ═══════════════════════════════════════════════════════════
+app.get('/api/locations', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT * FROM locations WHERE active=TRUE ORDER BY id');
+    res.json(r.rows);
+  } catch(e) { 
+    console.error('[locations]', e.message);
+    res.status(500).json({ error: 'Error interno' }); 
+  }
+});
 app.get('/api/test-db', async (req, res) => {
   try {
     const r = await pool.query('SELECT COUNT(*) FROM locations');
