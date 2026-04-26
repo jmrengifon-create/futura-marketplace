@@ -1259,5 +1259,12 @@ app.post('/api/webhook/mp', async (req, res) => {
 // ═══════════════════════════════════════════════════════════
 // START
 // ═══════════════════════════════════════════════════════════
-
+app.get('/api/test-db', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT COUNT(*) FROM locations');
+    res.json({ ok: true, count: r.rows[0].count });
+  } catch(e) {
+    res.json({ error: e.message });
+  }
+});
 app.listen(3001, () => console.log('✅ Backend Futura v5.0 activo en puerto 3001'));
