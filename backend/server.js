@@ -413,6 +413,35 @@ app.post('/api/admin/email-campaigns/:id/send', auth, role('ADMIN'), async (req,
     res.json({ ok: true, sent: count });
   } catch(e) { res.status(500).json({ error: 'Error interno' }); }
 });
+app.get('/api/buyer/credits', auth, async (req, res) => {
+  try {
+    const r = await pool.query(
+      'SELECT * FROM buyer_credits WHERE buyer_id=$1 ORDER BY created_at DESC',
+      [req.user.id]
+    ).catch(() => ({ rows: [] }));
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/buyer/credits/request', auth, async (req, res) => {
+  try {
+    const { amount, installments } = req.body;
+    const monthly = (parseFloat(amount) / parseInt(installments)).toFixed(2);
+    const r = await pool.query(
+      `INSERT INTO buyer_credits(buyer_id,amount,installments,monthly_payment,status)
+       VALUES($1,$2,$3,$4,'PENDIENTE') RETURNING *`,
+      [req.user.id, amount, installments, monthly]
+    );
+    const admins = await pool.query("SELECT id FROM users WHERE role='ADMIN'");
+    const u = await pool.query('SELECT name FROM users WHERE id=$1', [req.user.id]);
+    for (const a of admins.rows) {
+      await notify(a.id, 'SOLICITUD_CREDITO', '💳 Nueva solicitud de crédito',
+        `${u.rows[0].name} solicita crédito de S/ ${amount} en ${installments} cuotas`,
+        '/admin/credits');
+    }
+    res.json(r.rows[0]);
+  } catch(e) { console.error('[credit req]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
 app.get('/api/locations', async (req, res) => {
   try {
     const r = await pool.query('SELECT * FROM locations WHERE active=TRUE ORDER BY id');
