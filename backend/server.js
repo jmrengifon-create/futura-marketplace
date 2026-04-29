@@ -1565,7 +1565,7 @@ app.post('/api/webhook/mp', async (req, res) => {
 // START
 // ═══════════════════════════════════════════════════════════
 // ── Futura Marketplace v3.0 — 23 módulos nuevos ──────────────
-const { registerFuturaModules } = require('./modules/app');
+const { registerFuturaModules } = require('./src/modules/app');
 registerFuturaModules(app);
 // ─────────────────────────────────────────────────────────────
 app.listen(3001, () => console.log('✅ Backend Futura v5.0 activo en puerto 3001'));
