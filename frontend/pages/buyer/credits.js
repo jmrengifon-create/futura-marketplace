@@ -32,8 +32,8 @@ export default function BuyerCredits() {
     } catch(e) { setMsg('❌ ' + e.message); }
   };
 
-  const statusColor = s => s === 'ACTIVO' ? '#15803d' : s === 'PENDIENTE' ? '#ca8a04' : '#dc2626';
-  const statusBg   = s => s === 'ACTIVO' ? '#f0fdf4' : s === 'PENDIENTE' ? '#fefce8' : '#fef2f2';
+  const sColor = s => s==='ACTIVO'?'#15803d':s==='PENDIENTE'?'#ca8a04':'#dc2626';
+  const sBg    = s => s==='ACTIVO'?'#f0fdf4':s==='PENDIENTE'?'#fefce8':'#fef2f2';
 
   return (
     <div style={{fontFamily:"'Segoe UI',sans-serif",background:'#f0f4f8',minHeight:'100vh'}}>
@@ -44,10 +44,7 @@ export default function BuyerCredits() {
           <span style={{color:'white',fontWeight:700,fontSize:15}}>💳 Mis Créditos</span>
         </div>
       </header>
-
       <div style={{maxWidth:960,margin:'24px auto',padding:'0 24px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
-
-        {/* Formulario */}
         <div style={{background:'white',borderRadius:16,padding:24,boxShadow:'0 2px 12px rgba(0,0,0,0.06)'}}>
           <h3 style={{margin:'0 0 16px',fontSize:15,fontWeight:800,color:'#0D3B87'}}>💳 Solicitar Crédito</h3>
           {msg && <div style={{padding:'10px 14px',borderRadius:10,marginBottom:14,fontWeight:600,background:msg.startsWith('✅')?'#f0fdf4':'#fef2f2',color:msg.startsWith('✅')?'#15803d':'#dc2626'}}>{msg}</div>}
@@ -76,8 +73,6 @@ export default function BuyerCredits() {
             </button>
           </div>
         </div>
-
-        {/* Lista de créditos */}
         <div style={{background:'white',borderRadius:16,padding:24,boxShadow:'0 2px 12px rgba(0,0,0,0.06)'}}>
           <h3 style={{margin:'0 0 16px',fontSize:15,fontWeight:800,color:'#0D3B87'}}>📋 Mis Solicitudes</h3>
           {loading ? <p style={{color:'#94a3b8'}}>Cargando...</p>
@@ -90,9 +85,9 @@ export default function BuyerCredits() {
             <div key={c.id} style={{border:'1px solid #e5e7eb',borderRadius:12,padding:'14px 16px',marginBottom:10}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
                 <div style={{fontWeight:700,fontSize:15,color:'#0D3B87'}}>S/ {parseFloat(c.amount).toLocaleString()}</div>
-                <span style={{background:statusBg(c.status),color:statusColor(c.status),padding:'3px 10px',borderRadius:20,fontSize:11,fontWeight:700}}>{c.status}</span>
+                <span style={{background:sBg(c.status),color:sColor(c.status),padding:'3px 10px',borderRadius:20,fontSize:11,fontWeight:700}}>{c.status}</span>
               </div>
-              <div style={{fontSize:12,color:'#64748b'}}>{c.installments} cuotas · S/ {c.monthly_payment||monthly} /mes</div>
+              <div style={{fontSize:12,color:'#64748b'}}>{c.installments} cuotas · S/ {c.monthly_payment} /mes</div>
               {c.rejected_reason && <div style={{fontSize:12,color:'#dc2626',marginTop:6}}>Motivo: {c.rejected_reason}</div>}
             </div>
           ))}
