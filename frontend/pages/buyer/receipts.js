@@ -31,9 +31,8 @@ export default function BuyerReceipts() {
             <h3 style={{margin:0,fontSize:15,fontWeight:800,color:'#0D3B87'}}>🧾 Boletas Electrónicas</h3>
             <p style={{margin:'4px 0 0',fontSize:12,color:'#64748b'}}>Generadas automáticamente al confirmar cada pago</p>
           </div>
-          {loading ? (
-            <div style={{padding:48,textAlign:'center',color:'#94a3b8'}}>Cargando...</div>
-          ) : receipts.length === 0 ? (
+          {loading ? <div style={{padding:48,textAlign:'center',color:'#94a3b8'}}>Cargando...</div>
+          : receipts.length === 0 ? (
             <div style={{padding:48,textAlign:'center',color:'#94a3b8'}}>
               <div style={{fontSize:40,marginBottom:12}}>🧾</div>
               <p>Sin boletas todavía. Se generan al completar pagos.</p>
