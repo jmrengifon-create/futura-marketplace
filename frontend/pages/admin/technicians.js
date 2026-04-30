@@ -1,7 +1,8 @@
 // frontend/pages/admin/technicians.js — Panel de Personal Técnico
 import { useEffect, useState } from 'react';
 import { apiFetch } from '../../lib/api';
-
+const [showNewTechnician, setShowNewTechnician] = useState(false);
+const [newTech, setNewTech] = useState({ name: '', phone: '', specialties: '' });
 const STATUS_C = { TRABAJANDO:{bg:'#f0fdf4',c:'#15803d',dot:'#22c55e',label:'🟢 Trabajando'}, COMISION:{bg:'#eff6ff',c:'#3B75C0',dot:'#3B75C0',label:'🔵 Comisión'}, PERMISO:{bg:'#fefce8',c:'#ca8a04',dot:'#eab308',label:'🟡 Permiso'}, LIBRE:{bg:'#f8fafc',c:'#64748b',dot:'#94a3b8',label:'⚪ Libre'} };
 const fmt = d => d ? new Date(d).toLocaleDateString('es-PE',{day:'2-digit',month:'short',year:'numeric'}) : '—';
 const fmtDT = d => d ? new Date(d).toLocaleString('es-PE',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
@@ -85,8 +86,79 @@ export default function AdminTechnicians() {
                 <div style={{ display:'flex', gap:8, fontSize:12 }}>
                   <span style={{ color:'#22c55e', fontWeight:700 }}>🟢 {stats.counts.working} trabajando</span>
                   <span style={{ color:'#94a3b8' }}>⚪ {stats.counts.available} libres</span>
+                {showNewTechnician && (
+  <div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}>
+    <div style={{background:'white',borderRadius:'12px',padding:'32px',width:'400px'}}>
+      <h3 style={{marginBottom:'20px'}}>👨‍🔧 Nuevo Técnico</h3>
+      <input
+        placeholder="Nombre completo *"
+        value={newTech.name}
+        onChange={e => setNewTech({...newTech, name: e.target.value})}
+        style={{width:'100%',padding:'10px',marginBottom:'12px',border:'1px solid #ddd',borderRadius:'8px',boxSizing:'border-box'}}
+      />
+      <input
+        placeholder="Teléfono"
+        value={newTech.phone}
+        onChange={e => setNewTech({...newTech, phone: e.target.value})}
+        style={{width:'100%',padding:'10px',marginBottom:'12px',border:'1px solid #ddd',borderRadius:'8px',boxSizing:'border-box'}}
+      />
+      <input
+        placeholder="Especialidades (ej: Impresoras, Plotters)"
+        value={newTech.specialties}
+        onChange={e => setNewTech({...newTech, specialties: e.target.value})}
+        style={{width:'100%',padding:'10px',marginBottom:'20px',border:'1px solid #ddd',borderRadius:'8px',boxSizing:'border-box'}}
+      />
+      <div style={{display:'flex',gap:'12px'}}>
+        <button
+          onClick={async () => {
+            if (!newTech.name) return alert('El nombre es obligatorio');
+            try {
+              const token = localStorage.getItem('token');
+              await fetch('/api/admin/technicians', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json','Authorization':`Bearer ${token}`},
+                body: JSON.stringify({
+                  name: newTech.name,
+                  phone: newTech.phone,
+                  specialties: newTech.specialties.split(',').map(s => s.trim()).filter(Boolean)
+                })
+              });
+              setShowNewTechnician(false);
+              setNewTech({ name: '', phone: '', specialties: '' });
+              window.location.reload();
+            } catch(e) { alert('Error al crear técnico'); }
+          }}
+          style={{flex:1,background:'#10B981',color:'white',border:'none',borderRadius:'8px',padding:'12px',cursor:'pointer',fontWeight:'bold'}}
+        >
+          ✅ Crear Técnico
+        </button>
+        <button
+          onClick={() => setShowNewTechnician(false)}
+          style={{flex:1,background:'#E5E7EB',color:'#374151',border:'none',borderRadius:'8px',padding:'12px',cursor:'pointer'}}
+        >
+          Cancelar
+        </button>
+      </div>
+    </div>
+  </div>
+)}
                 </div>
               )}
+<button
+  onClick={() => setShowNewTechnician(true)}
+  style={{
+    background: '#1A56DB',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    padding: '10px 20px',
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    marginRight: '10px'
+  }}
+>
+  + Nuevo Técnico
+</button>        
               <button onClick={()=>setShowNewService(true)} className="btn btn-sm btn-green">+ Nuevo Servicio</button>
             </div>
           </div>
