@@ -79,7 +79,7 @@ const app  = express();
 app.set('trust proxy', 1);
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes('railway') ? { rejectUnauthorized: false } : false
+  ssl: { rejectUnauthorized: false } 
 });
 app.use(express.json());
 app.get('/health', (req, res) => res.json({ status: 'ok', service: 'backend', ts: new Date() }));
