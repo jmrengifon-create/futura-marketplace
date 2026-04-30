@@ -68,12 +68,7 @@ app.set('trust proxy', 1);
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
 
 app.use(express.json());
-app.get('/migrate', async (req, res) => {
-  const done = [], fail = [];
-  const q = async (name, sql) => {
-    try { await pool.query(sql); done.push(name); }
-    catch(e) { fail.push({ name, error: e.message }); }
-  };
+
   await q('technical_services', "CREATE TABLE IF NOT EXISTS technical_services (id SERIAL PRIMARY KEY, technician_id INTEGER, client_name VARCHAR(200), client_address VARCHAR(300), client_phone VARCHAR(50), service_type VARCHAR(100) DEFAULT 'MANTENIMIENTO', scheduled_at TIMESTAMPTZ, problem_reported TEXT, solution_applied TEXT, status VARCHAR(20) DEFAULT 'EN_CURSO', technician_name VARCHAR(200), completed_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())");
   await q('user_scores', "CREATE TABLE IF NOT EXISTS user_scores (id SERIAL PRIMARY KEY, user_id INTEGER UNIQUE, score INTEGER DEFAULT 50, color VARCHAR(20) DEFAULT 'AMARILLO', notes TEXT, last_calculated TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())");
   await q('credit_applications', "CREATE TABLE IF NOT EXISTS credit_applications (id SERIAL PRIMARY KEY, buyer_id INTEGER, product_id INTEGER, machine_id INTEGER, amount NUMERIC(12,2), initial_payment NUMERIC(12,2) DEFAULT 0, installments INTEGER, tea_rate NUMERIC(6,2) DEFAULT 18.00, monthly_payment NUMERIC(12,2), total_with_interest NUMERIC(12,2), purpose TEXT, status VARCHAR(20) DEFAULT 'PENDIENTE', admin_notes TEXT, reviewed_by INTEGER, reviewed_at TIMESTAMPTZ, approved_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())");
