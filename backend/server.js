@@ -69,132 +69,196 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejec
 
 app.use(express.json());
 app.get('/health', (req, res) => res.json({ status: 'ok', service: 'backend', ts: new Date() }));
+wait pool.query(`
 app.get('/setup-db', async (req, res) => {
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS technical_services (
-        id SERIAL PRIMARY KEY,
-        technician_id INTEGER REFERENCES technicians(id),
-        client_name VARCHAR(200),
-        client_address VARCHAR(300),
-        client_phone VARCHAR(50),
-        service_type VARCHAR(100) DEFAULT 'MANTENIMIENTO',
-        scheduled_at TIMESTAMPTZ,
-        problem_reported TEXT,
-        solution_applied TEXT,
-        status VARCHAR(20) DEFAULT 'EN_CURSO',
-        technician_name VARCHAR(200),
-        completed_at TIMESTAMPTZ,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS user_scores (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) UNIQUE,
-        score INTEGER DEFAULT 50,
-        color VARCHAR(20) DEFAULT 'AMARILLO',
-        notes TEXT,
-        last_calculated TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS credit_applications (
-        id SERIAL PRIMARY KEY,
-        buyer_id INTEGER REFERENCES users(id),
-        product_id INTEGER,
-        machine_id INTEGER,
-        amount NUMERIC(12,2),
-        initial_payment NUMERIC(12,2) DEFAULT 0,
-        installments INTEGER,
-        tea_rate NUMERIC(6,2) DEFAULT 18.00,
-        monthly_payment NUMERIC(12,2),
-        total_with_interest NUMERIC(12,2),
-        purpose TEXT,
-        status VARCHAR(20) DEFAULT 'PENDIENTE',
-        admin_notes TEXT,
-        reviewed_by INTEGER,
-        reviewed_at TIMESTAMPTZ,
-        approved_at TIMESTAMPTZ,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS credit_installments (
-        id SERIAL PRIMARY KEY,
-        credit_id INTEGER REFERENCES credit_applications(id),
-        installment_num INTEGER,
-        amount NUMERIC(12,2),
-        due_date DATE,
-        status VARCHAR(20) DEFAULT 'PENDIENTE',
-        paid_at TIMESTAMPTZ,
-        payment_method VARCHAR(50),
-        alert_7d_sent BOOLEAN DEFAULT FALSE,
-        alert_3d_sent BOOLEAN DEFAULT FALSE
-      )
-    `);
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS vendor_offers (
-        id SERIAL PRIMARY KEY,
-        seller_id INTEGER REFERENCES users(id),
-        title VARCHAR(200),
-        description TEXT,
-        discount_pct NUMERIC(5,2) DEFAULT 0,
-        offer_type VARCHAR(50) DEFAULT 'DESCUENTO',
-        target_audience VARCHAR(50) DEFAULT 'TODOS',
-        machine_id INTEGER,
-        product_id INTEGER,
-        image_url TEXT,
-        valid_from DATE,
-        valid_until DATE,
-        status VARCHAR(20) DEFAULT 'PENDIENTE',
-        admin_notes TEXT,
-        approved_by INTEGER,
-        approved_at TIMESTAMPTZ,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS loyalty_levels (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(100),
-        min_months INTEGER,
-        benefits TEXT,
-        color VARCHAR(20)
-      )
-    `);
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS loyalty_points (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id),
-        points INTEGER DEFAULT 0,
-        type VARCHAR(50),
-        description TEXT,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS futura_machines (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(200),
-        brand VARCHAR(100),
-        model VARCHAR(100),
-        owner_id INTEGER REFERENCES users(id),
-        status VARCHAR(20) DEFAULT 'ACTIVO',
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-    await pool.query(`ALTER TABLE locations ADD COLUMN IF NOT EXISTS manager_id INTEGER`);
-    await pool.query(`ALTER TABLE locations ADD COLUMN IF NOT EXISTS address VARCHAR(300)`);
-    await pool.query(`ALTER TABLE locations ADD COLUMN IF NOT EXISTS phone VARCHAR(50)`);
-    await pool.query(`ALTER TABLE locations ADD COLUMN IF NOT EXISTS email VARCHAR(200)`);
-    await pool.query(`ALTER TABLE locations ADD COLUMN IF NOT EXISTS type VARCHAR(50) DEFAULT 'ALMACEN'`);
-    await pool.query(`ALTER TABLE technicians ADD COLUMN IF NOT EXISTS commission_destination VARCHAR(200)`);
-    await pool.query(`ALTER TABLE technicians ADD COLUMN IF NOT EXISTS commission_return_date DATE`);
-    await pool.query(`ALTER TABLE technicians ADD COLUMN IF NOT EXISTS permission_type VARCHAR(50)`);
-    await pool.query(`ALTER TABLE technicians ADD COLUMN IF NOT EXISTS permission_until DATE`);
-    await pool.query(`
+  const results = [];
+  const run = async (name, fn) => {
+    try { await fn(); results.push({ ok: true, name }); }
+    catch(e) { results.push({ ok: false, name, error: e.message }); }
+  };
+
+  await run('technical_services', () => pool.query(`
+    CREATE TABLE IF NOT EXISTS technical_services (
+      id SERIAL PRIMARY KEY,
+      technician_id INTEGER,
+      client_name VARCHAR(200),
+      client_address VARCHAR(300),
+      client_phone VARCHAR(50),
+      service_type VARCHAR(100) DEFAULT 'MANTENIMIENTO',
+      scheduled_at TIMESTAMPTZ,
+      problem_reported TEXT,
+      solution_applied TEXT,
+      status VARCHAR(20) DEFAULT 'EN_CURSO',
+      technician_name VARCHAR(200),
+      completed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `));
+  await run('user_scores', () => pool.query(`
+    CREATE TABLE IF NOT EXISTS user_scores (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER UNIQUE,
+      score INTEGER DEFAULT 50,
+      color VARCHAR(20) DEFAULT 'AMARILLO',
+      notes TEXT,
+      last_calculated TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `));
+  await run('credit_applications', () => pool.query(`
+    CREATE TABLE IF NOT EXISTS credit_applications (
+      id SERIAL PRIMARY KEY,
+      buyer_id INTEGER,
+      product_id INTEGER,
+      machine_id INTEGER,
+      amount NUMERIC(12,2),
+      initial_payment NUMERIC(12,2) DEFAULT 0,
+      installments INTEGER,
+      tea_rate NUMERIC(6,2) DEFAULT 18.00,
+      monthly_payment NUMERIC(12,2),
+      total_with_interest NUMERIC(12,2),
+      purpose TEXT,
+      status VARCHAR(20) DEFAULT 'PENDIENTE',
+      admin_notes TEXT,
+      reviewed_by INTEGER,
+      reviewed_at TIMESTAMPTZ,
+      approved_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `));
+  await run('credit_installments', () => pool.query(`
+    CREATE TABLE IF NOT EXISTS credit_installments (
+      id SERIAL PRIMARY KEY,
+      credit_id INTEGER,
+      installment_num INTEGER,
+      amount NUMERIC(12,2),
+      due_date DATE,
+      status VARCHAR(20) DEFAULT 'PENDIENTE',
+      paid_at TIMESTAMPTZ,
+      payment_method VARCHAR(50),
+      alert_7d_sent BOOLEAN DEFAULT FALSE,
+      alert_3d_sent BOOLEAN DEFAULT FALSE
+    )
+  `));
+  await run('vendor_offers', () => pool.query(`
+    CREATE TABLE IF NOT EXISTS vendor_offers (
+      id SERIAL PRIMARY KEY,
+      seller_id INTEGER,
+      title VARCHAR(200),
+      description TEXT,
+      discount_pct NUMERIC(5,2) DEFAULT 0,
+      offer_type VARCHAR(50) DEFAULT 'DESCUENTO',
+      target_audience VARCHAR(50) DEFAULT 'TODOS',
+      machine_id INTEGER,
+      product_id INTEGER,
+      image_url TEXT,
+      valid_from DATE,
+      valid_until DATE,
+      status VARCHAR(20) DEFAULT 'PENDIENTE',
+      admin_notes TEXT,
+      approved_by INTEGER,
+      approved_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `));
+  await run('loyalty_levels', () => pool.query(`
+    CREATE TABLE IF NOT EXISTS loyalty_levels (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(100),
+      min_months INTEGER,
+      benefits TEXT,
+      color VARCHAR(20)
+    )
+  `));
+  await run('loyalty_points', () => pool.query(`
+    CREATE TABLE IF NOT EXISTS loyalty_points (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER,
+      points INTEGER DEFAULT 0,
+      type VARCHAR(50),
+      description TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `));
+  await run('futura_machines', () => pool.query(`
+    CREATE TABLE IF NOT EXISTS futura_machines (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(200),
+      brand VARCHAR(100),
+      model VARCHAR(100),
+      owner_id INTEGER,
+      status VARCHAR(20) DEFAULT 'ACTIVO',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `));
+  await run('locations_cols', () => pool.query(`
+    ALTER TABLE locations
+    ADD COLUMN IF NOT EXISTS manager_id INTEGER,
+    ADD COLUMN IF NOT EXISTS address VARCHAR(300),
+    ADD COLUMN IF NOT EXISTS phone VARCHAR(50),
+    ADD COLUMN IF NOT EXISTS email VARCHAR(200),
+    ADD COLUMN IF NOT EXISTS type VARCHAR(50) DEFAULT 'ALMACEN'
+  `));
+  await run('technicians_cols', () => pool.query(`
+    ALTER TABLE technicians
+    ADD COLUMN IF NOT EXISTS commission_destination VARCHAR(200),
+    ADD COLUMN IF NOT EXISTS commission_return_date DATE,
+    ADD COLUMN IF NOT EXISTS permission_type VARCHAR(50),
+    ADD COLUMN IF NOT EXISTS permission_until DATE
+  `));
+  await run('buyer_loyalty_view', () => pool.query(`
+    CREATE OR REPLACE VIEW buyer_loyalty_view AS
+    SELECT u.id AS buyer_id, u.name, u.email,
+      COALESCE(us.score, 50) AS score,
+      COALESCE(us.color, 'AMARILLO') AS traffic_light,
+      COUNT(DISTINCT o.id) AS total_orders,
+      COALESCE(SUM(o.total) FILTER (WHERE o.status='ENTREGADA'), 0) AS total_spent,
+      EXTRACT(MONTH FROM AGE(NOW(), u.created_at))::INT AS months_as_client,
+      COALESCE(SUM(lp.points), 0) AS total_points
+    FROM users u
+    LEFT JOIN user_scores us ON us.user_id = u.id
+    LEFT JOIN orders o ON o.buyer_id = u.id
+    LEFT JOIN loyalty_points lp ON lp.user_id = u.id
+    WHERE u.role = 'COMPRADOR'
+    GROUP BY u.id, u.name, u.email, us.score, us.color
+  `));
+  await run('calculate_user_score', () => pool.query(`
+    CREATE OR REPLACE FUNCTION calculate_user_score(p_user_id INTEGER)
+    RETURNS TABLE(score INTEGER, color VARCHAR, notes TEXT) AS $$
+    DECLARE
+      v_score INTEGER := 50;
+      v_orders INTEGER;
+      v_overdue INTEGER;
+      v_months INTEGER;
+    BEGIN
+      SELECT COUNT(*) INTO v_orders FROM orders WHERE buyer_id = p_user_id AND status = 'ENTREGADA';
+      SELECT COUNT(*) INTO v_overdue FROM credit_installments ci
+        JOIN credit_applications ca ON ca.id = ci.credit_id
+        WHERE ca.buyer_id = p_user_id AND ci.status = 'VENCIDO';
+      SELECT EXTRACT(MONTH FROM AGE(NOW(), created_at))::INT INTO v_months FROM users WHERE id = p_user_id;
+      v_score := 50 + (v_orders * 5) - (v_overdue * 10) + LEAST(v_months, 24);
+      v_score := GREATEST(0, LEAST(100, v_score));
+      RETURN QUERY SELECT v_score,
+        CASE WHEN v_score >= 70 THEN 'VERDE'::VARCHAR
+             WHEN v_score >= 40 THEN 'AMARILLO'::VARCHAR
+             ELSE 'ROJO'::VARCHAR END,
+        ('Score: ' || v_score)::TEXT;
+    END;
+    $$ LANGUAGE plpgsql
+  `));
+  await run('user_scores_seed', () => pool.query(`
+    INSERT INTO user_scores (user_id, score, color)
+    SELECT id, 50, 'AMARILLO' FROM users WHERE role IN ('COMPRADOR','VENDEDOR')
+    ON CONFLICT (user_id) DO NOTHING
+  `));
+
+  // Test de las queries que fallan
+  await run('test_technicians', () => pool.query(`SELECT COUNT(*) FROM technicians WHERE active=TRUE`));
+  await run('test_tech_services', () => pool.query(`SELECT COUNT(*) FROM technical_services`));
+  await run('test_locations', () => pool.query(`SELECT l.*, u.name FROM locations l LEFT JOIN users u ON u.id=l.manager_id WHERE l.active=TRUE ORDER BY l.name`));
+
+  res.json({ results });
+});        
       CREATE OR REPLACE VIEW buyer_loyalty_view AS
       SELECT u.id AS buyer_id, u.name, u.email,
         COALESCE(us.score, 50) AS score,
