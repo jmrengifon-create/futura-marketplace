@@ -241,19 +241,18 @@ app.get('/api/admin/technicians', auth, role('ADMIN'), async (req, res) => {
     res.json(r.rows);
   } catch(e) { res.status(500).json({ error: 'Error interno' }); }
 });
-
 app.post('/api/admin/technicians', auth, role('ADMIN'), async (req, res) => {
   try {
     const { name, phone, specialties } = req.body;
     if (!name) return res.status(400).json({ error: 'Nombre requerido' });
     const r = await pool.query(
-      `INSERT INTO technicians(name,phone,specialties,status,active) VALUES($1,$2,$3,'LIBRE',TRUE) RETURNING *`,
-      [name, phone || '', specialties || []]
+      `INSERT INTO technicians(name,phone,specialties,status,active)
+       VALUES($1,$2,$3,'LIBRE',TRUE) RETURNING *`,
+      [name, phone||'', typeof specialties === 'string' ? [specialties] : (specialties||[])]
     );
     res.json(r.rows[0]);
   } catch(e) { console.error('[tech POST]', e.message); res.status(500).json({ error: 'Error interno' }); }
 });
-
 app.put('/api/admin/technicians/:id/status', auth, role('ADMIN'), async (req, res) => {
   try {
     const { status, current_client, current_address, commission_destination,
