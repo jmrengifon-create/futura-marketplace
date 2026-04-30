@@ -146,6 +146,15 @@ app.use(improvementsRouter(pool, auth, role, notify, redis));
 app.use(waInbox(pool, auth, role));
 app.use(phase1(pool, auth, role, notify));
 app.use(phase2(pool, auth, role, notify));
+app.get('/api/locations', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT * FROM locations WHERE active=TRUE ORDER BY id');
+    res.json(r.rows);
+  } catch(e) {
+    console.error('[locations]', e.message);
+    res.status(500).json({ error: 'Error interno' });
+  }
+});
 //app.use(phase3(pool, auth, role, notify));
 app.use(phase4(pool, auth, role, notify));
 app.use(phase5(pool, auth, role, notify));
@@ -1259,21 +1268,4 @@ app.post('/api/webhook/mp', async (req, res) => {
 // ═══════════════════════════════════════════════════════════
 // START
 // ═══════════════════════════════════════════════════════════
-app.get('/api/locations', async (req, res) => {
-  try {
-    const r = await pool.query('SELECT * FROM locations WHERE active=TRUE ORDER BY id');
-    res.json(r.rows);
-  } catch(e) { 
-    console.error('[locations]', e.message);
-    res.status(500).json({ error: 'Error interno' }); 
-  }
-});
-app.get('/api/test-db', async (req, res) => {
-  try {
-    const r = await pool.query('SELECT COUNT(*) FROM locations');
-    res.json({ ok: true, count: r.rows[0].count });
-  } catch(e) {
-    res.json({ error: e.message });
-  }
-});
 app.listen(3001, () => console.log('✅ Backend Futura v5.0 activo en puerto 3001'));
