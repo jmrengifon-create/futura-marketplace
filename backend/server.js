@@ -146,7 +146,7 @@ app.use(improvementsRouter(pool, auth, role, notify, redis));
 app.use(waInbox(pool, auth, role));
 app.use(phase1(pool, auth, role, notify));
 app.use(phase2(pool, auth, role, notify));
-app.use(phase3(pool, auth, role, notify));
+//app.use(phase3(pool, auth, role, notify));
 app.use(phase4(pool, auth, role, notify));
 app.use(phase5(pool, auth, role, notify));
 app.use(crmRouter(pool, auth, role, notify));
