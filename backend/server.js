@@ -70,13 +70,6 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejec
 app.use(express.json());
 app.get('/health', (req, res) => res.json({ status: 'ok', service: 'backend', ts: new Date() }));
 wait pool.query(`
-app.get('/setup-db', async (req, res) => {
-  const results = [];
-  const run = async (name, fn) => {
-    try { await fn(); results.push({ ok: true, name }); }
-    catch(e) { results.push({ ok: false, name, error: e.message }); }
-  };
-
   await run('technical_services', () => pool.query(`
     CREATE TABLE IF NOT EXISTS technical_services (
       id SERIAL PRIMARY KEY,
