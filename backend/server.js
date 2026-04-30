@@ -361,6 +361,58 @@ app.get('/api/admin/credits', auth, role('ADMIN'), async (req, res) => {
     res.json({ credits: r.rows, stats: stats.rows[0] });
   } catch(e) { res.status(500).json({ error: 'Error interno' }); }
 });
+app.get('/api/admin/inventory/summary', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT l.id, l.name, l.city,
+        COUNT(i.id) AS total_items,
+        COALESCE(SUM(i.quantity), 0) AS total_stock,
+        COUNT(CASE WHEN i.quantity <= i.min_quantity THEN 1 END) AS low_stock,
+        COALESCE(SUM(i.quantity * i.unit_cost), 0) AS total_value
+      FROM locations l
+      LEFT JOIN inventory i ON i.location_id = l.id
+      WHERE l.active = TRUE
+      GROUP BY l.id, l.name, l.city
+      ORDER BY l.id`);
+    res.json(r.rows);
+  } catch(e) { console.error('[inv summary]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.get('/api/admin/receipts', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT er.*, u.name AS buyer_name, u.email AS buyer_email
+      FROM electronic_receipts er
+      LEFT JOIN users u ON u.id = er.buyer_id
+      ORDER BY er.issued_at DESC`);
+    res.json(r.rows);
+  } catch(e) { console.error('[receipts]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.get('/api/admin/social-metrics', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const posts = await pool.query('SELECT COUNT(*) AS total, COALESCE(SUM(reach),0) AS reach, COALESCE(SUM(likes),0) AS likes FROM social_posts');
+    const campaigns = await pool.query('SELECT COUNT(*) AS total, COALESCE(SUM(sent_count),0) AS sent FROM email_campaigns');
+    const subs = await pool.query('SELECT COUNT(*) AS total FROM email_subscribers WHERE opted_in=TRUE');
+    res.json({
+      posts: posts.rows[0],
+      campaigns: campaigns.rows[0],
+      subscribers: subs.rows[0]
+    });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/admin/email-campaigns/:id/send', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const subs = await pool.query('SELECT COUNT(*) AS total FROM email_subscribers WHERE opted_in=TRUE');
+    const count = parseInt(subs.rows[0].total);
+    await pool.query(
+      "UPDATE email_campaigns SET status='ENVIADA', sent_count=$1 WHERE id=$2",
+      [count, req.params.id]
+    );
+    res.json({ ok: true, sent: count });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
 app.get('/api/locations', async (req, res) => {
   try {
     const r = await pool.query('SELECT * FROM locations WHERE active=TRUE ORDER BY id');
