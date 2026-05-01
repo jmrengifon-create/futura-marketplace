@@ -162,10 +162,10 @@ app.post('/api/admin/inventory', auth, role('ADMIN'), async (req, res) => {
     if (!location_id || !item_name) return res.status(400).json({ error: 'Faltan datos requeridos' });
     const qr_code = 'QR-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6).toUpperCase();
     const r = await pool.query(
-      `INSERT INTO inventory(location_id,item_name,item_type,qr_code,quantity,min_quantity,unit_cost,unit_price,status)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,'DISPONIBLE') RETURNING *`,
-      [location_id, item_name, item_type || 'PRODUCTO', qr_code, quantity || 0, min_quantity || 1, unit_cost || 0, unit_price || 0]
-    );
+      `INSERT INTO social_posts(admin_id, admin_name, title, content, media_url, platforms, scheduled_at, status)
+       VALUES($1, $2, $3, $4, $5, $6, $7, 'PROGRAMADO') RETURNING *`,
+      [req.user.id, adminName, title, content, media_url || null, platforms || ['FACEBOOK'], scheduled_at || null]
+    );  
     res.json(r.rows[0]);
   } catch(e) { console.error('[inventory POST]', e.message); res.status(500).json({ error: 'Error interno' }); }
 });
