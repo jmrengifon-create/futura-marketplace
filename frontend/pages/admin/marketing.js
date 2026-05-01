@@ -27,7 +27,7 @@ export default function AdminMarketing() {
         apiFetch('/api/admin/social-posts').catch(()=>[]),
         apiFetch('/api/admin/email-campaigns').catch(()=>[]),
         apiFetch('/api/admin/social-metrics').catch(()=>null),
-        apiFetch('/api/admin/email-subscribers').catch(()=>[]),
+        apiFetch('/api/email-subscribers').catch(()=>[]),
       ]);
       setPosts(Array.isArray(p)?p:[]); setCampaigns(Array.isArray(c)?c:[]); setMetrics(m); setSubscribers(Array.isArray(s)?s:[]);
     } catch {}
