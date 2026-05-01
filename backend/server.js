@@ -318,15 +318,16 @@ app.post('/api/admin/social-posts', auth, role('ADMIN'), async (req, res) => {
   try {
     const { title, content, media_url, platforms, scheduled_at } = req.body;
     if (!title || !content) return res.status(400).json({ error: 'Título y contenido requeridos' });
+    const adminUser = await pool.query('SELECT name FROM users WHERE id=$1', [req.user.id]);
+    const adminName = adminUser.rows[0]?.name || 'Admin';
     const r = await pool.query(
-      `INSERT INTO social_posts(admin_id,title,content,media_url,platforms,scheduled_at,status)
-       VALUES($1,$2,$3,$4,$5,$6,'PROGRAMADO') RETURNING *`,
+      INSERT INTO social_posts(admin_id, admin_name, title, content, media_url, platforms, scheduled_at, status)
+      VALUES($1, $2, $3, $4, $5, $6, $7, 'PROGRAMADO') RETURNING *
       [req.user.id, title, content, media_url || null, platforms || ['FACEBOOK'], scheduled_at || null]
     );
     res.json(r.rows[0]);
   } catch(e) { console.error('[social POST]', e.message); res.status(500).json({ error: 'Error interno' }); }
 });
-
 app.get('/api/admin/email-campaigns', auth, role('ADMIN'), async (req, res) => {
   try {
     const r = await pool.query('SELECT * FROM email_campaigns ORDER BY created_at DESC');
