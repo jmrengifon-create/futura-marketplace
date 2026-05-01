@@ -1,108 +1,125 @@
--- ============================================================
--- FUTURA v5.0 — FASE 3: Inventario Multi-Local + QR + Boletas
--- Ejecutar en Railway → Postgres → Query
--- ============================================================
+// backend/routes/phase3.js — Inventario, QR, Boletas
+module.exports = function(pool, auth, roleMiddleware, notify) {
+  const express = require('express');
+  const router  = express.Router();
 
--- ─── 1. LOCALES ──────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS locations (
-  id              SERIAL PRIMARY KEY,
-  name            VARCHAR(100) NOT NULL,
-  address         TEXT,
-  city            VARCHAR(100) DEFAULT 'Lima',
-  phone           VARCHAR(30),
-  manager_id      INT REFERENCES users(id),
-  active          BOOLEAN DEFAULT TRUE,
-  created_at      TIMESTAMP DEFAULT now()
-);
+  // GET /api/locations
+  router.get('/api/locations', async (req, res) => {
+    try {
+      const r = await pool.query('SELECT * FROM locations WHERE active=TRUE ORDER BY id');
+      res.json(r.rows);
+    } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+  });
 
-INSERT INTO locations (name, address, city) VALUES
-('Lampa',      'Jr. Lampa, Lima Centro', 'Lima'),
-('Boulevard',  'Av. Boulevard, San Isidro', 'Lima'),
-('Lurín',      'Av. Principal, Lurín', 'Lima'),
-('Pachitea',   'Jr. Pachitea, Cercado de Lima', 'Lima')
-ON CONFLICT DO NOTHING;
+  // GET /api/admin/inventory/summary
+  router.get('/api/admin/inventory/summary', auth, roleMiddleware('ADMIN'), async (req, res) => {
+    try {
+      const r = await pool.query(`
+        SELECT l.id, l.name, l.city,
+          COUNT(i.id) AS total_items,
+          COALESCE(SUM(i.quantity), 0) AS total_stock,
+          COUNT(CASE WHEN i.quantity <= i.min_quantity THEN 1 END) AS low_stock,
+          COALESCE(SUM(i.quantity * i.unit_cost), 0) AS total_value
+        FROM locations l
+        LEFT JOIN inventory i ON i.location_id = l.id
+        WHERE l.active = TRUE
+        GROUP BY l.id, l.name, l.city ORDER BY l.id`);
+      res.json(r.rows);
+    } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+  });
 
--- ─── 2. INVENTARIO POR LOCAL ─────────────────────────────────
-CREATE TABLE IF NOT EXISTS inventory (
-  id              SERIAL PRIMARY KEY,
-  location_id     INT NOT NULL REFERENCES locations(id),
-  product_id      INT REFERENCES products(id),
-  machine_id      INT REFERENCES futura_machines(id),
-  item_type       VARCHAR(20) DEFAULT 'PRODUCT' CHECK (item_type IN ('PRODUCT','MACHINE','SUPPLY')),
-  item_name       VARCHAR(200) NOT NULL,
-  sku             VARCHAR(100),
-  qr_code         VARCHAR(200) UNIQUE,
-  quantity        INT DEFAULT 0 CHECK (quantity >= 0),
-  min_quantity    INT DEFAULT 1,
-  unit_cost       NUMERIC(10,2) DEFAULT 0,
-  unit_price      NUMERIC(10,2) DEFAULT 0,
-  status          VARCHAR(20) DEFAULT 'DISPONIBLE' CHECK (status IN ('DISPONIBLE','AGOTADO','RESERVADO','DANADO')),
-  created_at      TIMESTAMP DEFAULT now(),
-  updated_at      TIMESTAMP DEFAULT now()
-);
+  // GET /api/admin/inventory
+  router.get('/api/admin/inventory', auth, roleMiddleware('ADMIN'), async (req, res) => {
+    try {
+      const { location_id } = req.query;
+      let sql = `SELECT i.*, l.name AS location_name FROM inventory i JOIN locations l ON l.id = i.location_id`;
+      const params = [];
+      if (location_id) { sql += ' WHERE i.location_id=$1'; params.push(location_id); }
+      sql += ' ORDER BY i.created_at DESC';
+      const r = await pool.query(sql, params);
+      res.json(r.rows);
+    } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+  });
 
-CREATE INDEX IF NOT EXISTS idx_inventory_location ON inventory(location_id);
-CREATE INDEX IF NOT EXISTS idx_inventory_qr       ON inventory(qr_code);
-CREATE INDEX IF NOT EXISTS idx_inventory_status   ON inventory(status);
+  // POST /api/admin/inventory
+  router.post('/api/admin/inventory', auth, roleMiddleware('ADMIN'), async (req, res) => {
+    try {
+      const { location_id, item_name, item_type, quantity, min_quantity, unit_cost, unit_price } = req.body;
+      if (!location_id || !item_name) return res.status(400).json({ error: 'Faltan datos requeridos' });
+      const qr_code = 'QR-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6).toUpperCase();
+      const r = await pool.query(
+        `INSERT INTO inventory(location_id,item_name,item_type,qr_code,quantity,min_quantity,unit_cost,unit_price,status)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,'DISPONIBLE') RETURNING *`,
+        [location_id, item_name, item_type || 'PRODUCTO', qr_code, quantity || 0, min_quantity || 1, unit_cost || 0, unit_price || 0]
+      );
+      res.json(r.rows[0]);
+    } catch(e) { console.error('[inventory POST]', e.message); res.status(500).json({ error: 'Error interno' }); }
+  });
 
--- ─── 3. MOVIMIENTOS DE INVENTARIO ────────────────────────────
-CREATE TABLE IF NOT EXISTS inventory_movements (
-  id              SERIAL PRIMARY KEY,
-  inventory_id    INT NOT NULL REFERENCES inventory(id),
-  location_id     INT NOT NULL REFERENCES locations(id),
-  movement_type   VARCHAR(20) NOT NULL CHECK (movement_type IN ('ENTRADA','SALIDA','VENTA','TRANSFERENCIA','AJUSTE','DEVOLUCION')),
-  quantity        INT NOT NULL,
-  quantity_before INT NOT NULL,
-  quantity_after  INT NOT NULL,
-  unit_price      NUMERIC(10,2),
-  total_value     NUMERIC(10,2),
-  reference_id    INT,
-  reference_type  VARCHAR(30),
-  notes           TEXT,
-  registered_by   INT REFERENCES users(id),
-  created_at      TIMESTAMP DEFAULT now()
-);
+  // PUT /api/admin/inventory/:id
+  router.put('/api/admin/inventory/:id', auth, roleMiddleware('ADMIN'), async (req, res) => {
+    try {
+      const { quantity, min_quantity, unit_cost, unit_price, status } = req.body;
+      await pool.query(
+        `UPDATE inventory SET quantity=$1,min_quantity=$2,unit_cost=$3,unit_price=$4,status=$5 WHERE id=$6`,
+        [quantity, min_quantity, unit_cost, unit_price, status || 'DISPONIBLE', req.params.id]
+      );
+      res.json({ ok: true });
+    } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+  });
 
-CREATE INDEX IF NOT EXISTS idx_movements_inventory ON inventory_movements(inventory_id);
-CREATE INDEX IF NOT EXISTS idx_movements_location  ON inventory_movements(location_id);
-CREATE INDEX IF NOT EXISTS idx_movements_date      ON inventory_movements(created_at);
+  // POST /api/admin/inventory/:id/movement
+  router.post('/api/admin/inventory/:id/movement', auth, roleMiddleware('ADMIN'), async (req, res) => {
+    try {
+      const { movement_type, quantity, notes } = req.body;
+      const item = await pool.query('SELECT * FROM inventory WHERE id=$1', [req.params.id]);
+      if (!item.rows.length) return res.status(404).json({ error: 'Item no encontrado' });
+      const before = item.rows[0].quantity;
+      const after  = movement_type === 'ENTRADA' ? before + parseInt(quantity) : before - parseInt(quantity);
+      await pool.query(
+        `INSERT INTO inventory_movements(inventory_id,location_id,movement_type,quantity,quantity_before,quantity_after,registered_by,notes)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [req.params.id, item.rows[0].location_id, movement_type, quantity, before, after, req.user.id, notes || '']
+      );
+      await pool.query('UPDATE inventory SET quantity=$1 WHERE id=$2', [after, req.params.id]);
+      res.json({ ok: true, quantity_after: after });
+    } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+  });
 
--- ─── 4. BOLETAS ELECTRÓNICAS ─────────────────────────────────
-CREATE TABLE IF NOT EXISTS electronic_receipts (
-  id              SERIAL PRIMARY KEY,
-  order_id        INT NOT NULL REFERENCES orders(id),
-  receipt_type    VARCHAR(10) DEFAULT 'BOLETA' CHECK (receipt_type IN ('BOLETA','FACTURA')),
-  receipt_number  VARCHAR(50) UNIQUE,
-  series          VARCHAR(10) DEFAULT 'B001',
-  correlative     INT NOT NULL,
-  buyer_id        INT NOT NULL REFERENCES users(id),
-  buyer_name      VARCHAR(200),
-  buyer_doc       VARCHAR(20),
-  buyer_address   TEXT,
-  subtotal        NUMERIC(10,2) NOT NULL,
-  igv             NUMERIC(10,2) NOT NULL,
-  total           NUMERIC(10,2) NOT NULL,
-  status          VARCHAR(20) DEFAULT 'EMITIDA' CHECK (status IN ('EMITIDA','ANULADA','PENDIENTE')),
-  pdf_url         TEXT,
-  sunat_response  JSONB,
-  issued_at       TIMESTAMP DEFAULT now(),
-  created_at      TIMESTAMP DEFAULT now()
-);
+  // GET /api/machine/:qrCode
+  router.get('/api/machine/:qrCode', async (req, res) => {
+    try {
+      const r = await pool.query(
+        `SELECT i.*, l.name AS location_name, l.address FROM inventory i
+         JOIN locations l ON l.id = i.location_id WHERE i.qr_code=$1`,
+        [req.params.qrCode]
+      );
+      if (!r.rows.length) return res.status(404).json({ error: 'No encontrado' });
+      res.json(r.rows[0]);
+    } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+  });
 
--- Secuencia para correlativos de boletas
-CREATE SEQUENCE IF NOT EXISTS receipt_correlative_seq START 1;
+  // GET /api/admin/receipts
+  router.get('/api/admin/receipts', auth, roleMiddleware('ADMIN'), async (req, res) => {
+    try {
+      const r = await pool.query(
+        `SELECT er.*, u.name AS buyer_name FROM electronic_receipts er
+         LEFT JOIN users u ON u.id = er.buyer_id ORDER BY er.issued_at DESC`
+      );
+      res.json(r.rows);
+    } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+  });
 
--- ─── 5. VISTA: INVENTARIO POR LOCAL ──────────────────────────
-CREATE OR REPLACE VIEW inventory_summary AS
-SELECT
-  l.name AS location_name, l.id AS location_id,
-  COUNT(i.id) AS total_items,
-  COUNT(i.id) FILTER (WHERE i.status='DISPONIBLE') AS available_items,
-  COUNT(i.id) FILTER (WHERE i.status='AGOTADO') AS out_of_stock,
-  COUNT(i.id) FILTER (WHERE i.quantity <= i.min_quantity AND i.quantity > 0) AS low_stock,
-  COALESCE(SUM(i.quantity * i.unit_cost),0) AS inventory_value,
-  COALESCE(SUM(i.quantity * i.unit_price),0) AS potential_revenue
-FROM locations l
-LEFT JOIN inventory i ON i.location_id = l.id
-WHERE l.active = TRUE
-GROUP BY l.id, l.name;
+  // GET /api/buyer/receipts
+  router.get('/api/buyer/receipts', auth, async (req, res) => {
+    try {
+      const r = await pool.query(
+        'SELECT * FROM electronic_receipts WHERE buyer_id=$1 ORDER BY issued_at DESC',
+        [req.user.id]
+      );
+      res.json(r.rows);
+    } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+  });
+
+  return router;
+};
