@@ -1055,11 +1055,12 @@ registerFuturaModules(app);
 app.get('/api/admin/stats/sellers', auth, role('ADMIN'), async (req, res) => {
   try {
     const r = await pool.query(`
-      SELECT u.id, u.name, u.email, sp.business_name, sp.rating_avg,
-        sp.total_sales, sp.verified,
-        COALESCE(SUM(i.price),0) AS revenue,
-        COALESCE(SUM(i.commission),0) AS commission,
-        COUNT(DISTINCT o.id) AS orders
+     SELECT u.id, u.name AS vendedor, u.email, sp.business_name, sp.rating_avg,
+  sp.total_sales, sp.verified,
+  COALESCE(SUM(i.price),0) AS total_vendido,
+  COALESCE(SUM(i.commission),0) AS total_comision,
+  COALESCE(SUM(i.net),0) AS total_neto,
+  COUNT(DISTINCT o.id) AS num_ventas 
       FROM users u
       JOIN seller_profiles sp ON sp.user_id = u.id
       LEFT JOIN order_items i ON i.seller_id = u.id
@@ -1076,10 +1077,13 @@ app.get('/api/admin/stats/sellers', auth, role('ADMIN'), async (req, res) => {
 app.get('/api/admin/stats/products', auth, role('ADMIN'), async (req, res) => {
   try {
     const r = await pool.query(`
-      SELECT p.id, p.title, p.price, p.active, c.name AS category_name,
-        u.name AS seller_name,
-        COALESCE(SUM(i.quantity),0) AS units_sold,
-        COALESCE(SUM(i.price),0) AS revenue
+      SELECT p.id, p.title AS producto, p.price, p.active,
+  c.name AS categoria,
+  u.name AS vendedor,
+  COALESCE(SUM(i.quantity),0) AS veces_vendido,
+  COALESCE(SUM(i.price),0) AS total_generado,
+  COALESCE(SUM(i.commission),0) AS comision_futura,
+  COALESCE(SUM(i.net),0) AS neto_vendedor
       FROM products p
       JOIN users u ON u.id = p.seller_id
       LEFT JOIN categories c ON c.id = p.category_id
@@ -1096,11 +1100,11 @@ app.get('/api/admin/stats/products', auth, role('ADMIN'), async (req, res) => {
 app.get('/api/admin/stats/categories', auth, role('ADMIN'), async (req, res) => {
   try {
     const r = await pool.query(`
-      SELECT c.id, c.name, c.commission_rate,
-        COUNT(DISTINCT p.id) AS total_products,
-        COALESCE(SUM(i.price),0) AS revenue,
-        COALESCE(SUM(i.commission),0) AS commission,
-        COUNT(DISTINCT i.id) AS total_orders
+      SELECT c.id, c.name AS categoria, c.commission_rate,
+  COUNT(DISTINCT p.id) AS total_products,
+  COALESCE(SUM(i.price),0) AS total_vendido,
+  COALESCE(SUM(i.commission),0) AS total_comision,
+  COUNT(DISTINCT i.id) AS num_ventas
       FROM categories c
       LEFT JOIN products p ON p.category_id = c.id
       LEFT JOIN order_items i ON i.product_id = p.id
