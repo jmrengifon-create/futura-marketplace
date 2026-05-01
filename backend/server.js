@@ -574,7 +574,7 @@ app.get('/api/products/:id', async (req, res) => {
 app.post('/api/products', auth, role('VENDEDOR'), upload.single('image'), async (req, res) => {
   try {
     const { title, description, price, categoryId, minQuantity, productionTimeDays, requiresDesignFile, materialsAvailable, sizesAvailable } = req.body;
-    const imageUrl = req.file?.location || req.file?.path ? `http://localhost:3001/uploads/${req.file.filename}` : null;
+    const imageUrl = req.file?.path || null;
     await pool.query(
       'INSERT INTO products(seller_id,category_id,title,description,price,min_quantity,production_time_days,requires_design_file,materials_available,sizes_available,image_url) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',
       [req.user.id, categoryId || null, title, description, price, minQuantity || 1, productionTimeDays || 3, requiresDesignFile === 'true', materialsAvailable || null, sizesAvailable || null, imageUrl]
@@ -615,7 +615,7 @@ app.post('/api/quotations', auth, role('COMPRADOR'), upload.array('designFiles',
     const qId = q.rows[0].id;
     if (req.files?.length) {
       for (const f of req.files) {
-        await pool.query('INSERT INTO design_files(quotation_id,uploaded_by,file_name,file_url,file_type,file_size) VALUES($1,$2,$3,$4,$5,$6)', [qId, req.user.id, f.originalname, `http://localhost:3001/uploads/${f.filename}`, f.mimetype, f.size]);
+    await pool.query('INSERT INTO design_files(quotation_id,uploaded_by,file_name,file_url,file_type,file_size) VALUES($1,$2,$3,$4,$5,$6)', [qId, req.user.id, f.originalname, f.path, f.mimetype, f.size]);
       }
     }
     const buyer = await pool.query('SELECT name FROM users WHERE id=$1', [req.user.id]);
@@ -777,7 +777,7 @@ app.get('/api/seller/orders', auth, role('VENDEDOR'), async (req, res) => {
 app.post('/api/seller/orders/:id/production', auth, role('VENDEDOR'), upload.single('photo'), async (req, res) => {
   try {
     const { status, description } = req.body;
-    const photoUrl = req.file ? `http://localhost:3001/uploads/${req.file.filename}` : null;
+    const photoUrl = req.file?.path || null;
     await pool.query('INSERT INTO production_logs(order_id,seller_id,status,description,photo_url) VALUES($1,$2,$3,$4,$5)', [req.params.id, req.user.id, status, description, photoUrl]);
     const orderStatus = status === 'LISTO' ? 'LISTO' : status === 'EN_PRODUCCION' ? 'EN_PRODUCCION' : null;
     if (orderStatus) await pool.query('UPDATE orders SET status=$1 WHERE id=$2', [orderStatus, req.params.id]);
@@ -1035,7 +1035,7 @@ app.post('/api/disputes', auth, upload.array('evidence', 5), async (req, res) =>
     if (!ord.rows.length) return res.status(404).json({ error: 'Orden no encontrada' });
     const order   = ord.rows[0];
     const against = req.user.id === order.buyer_id ? (await pool.query('SELECT DISTINCT seller_id FROM order_items WHERE order_id=$1', [orderId])).rows[0]?.seller_id : order.buyer_id;
-    const evidenceUrls = req.files?.map(f => `http://localhost:3001/uploads/${f.filename}`).join(',') || null;
+    const evidenceUrls = req.files?.map(f => f.path).join(',') || null;
     const d = await pool.query('INSERT INTO disputes(order_id,raised_by,against,reason,evidence_urls) VALUES($1,$2,$3,$4,$5) RETURNING id', [orderId, req.user.id, against, reason, evidenceUrls]);
     publishEvent('dispute.opened', { disputeId: d.rows[0].id, orderId: parseInt(orderId) });
     await notify(against, 'DISPUTA_ABIERTA', 'Se abrió una disputa', `Orden #${orderId}: ${reason.substring(0, 80)}`, '/my-orders');
