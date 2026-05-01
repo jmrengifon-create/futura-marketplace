@@ -1055,12 +1055,12 @@ registerFuturaModules(app);
 app.get('/api/admin/stats/sellers', auth, role('ADMIN'), async (req, res) => {
   try {
     const r = await pool.query(`
-     SELECT u.id, u.name AS vendedor, u.email, sp.business_name, sp.rating_avg,
-  sp.total_sales, sp.verified,
-  COALESCE(SUM(i.price),0) AS total_vendido,
-  COALESCE(SUM(i.commission),0) AS total_comision,
-  COALESCE(SUM(i.net),0) AS total_neto,
-  COUNT(DISTINCT o.id) AS num_ventas 
+      SELECT u.id, u.name AS vendedor, u.email, sp.business_name, sp.rating_avg,
+        sp.total_sales, sp.verified,
+        COALESCE(SUM(i.price),0) AS total_vendido,
+        COALESCE(SUM(i.commission),0) AS total_comision,
+        COALESCE(SUM(i.net),0) AS total_neto,
+        COUNT(DISTINCT o.id) AS num_ventas
       FROM users u
       JOIN seller_profiles sp ON sp.user_id = u.id
       LEFT JOIN order_items i ON i.seller_id = u.id
@@ -1068,7 +1068,7 @@ app.get('/api/admin/stats/sellers', auth, role('ADMIN'), async (req, res) => {
         AND o.status IN ('PAGADA','EN_PRODUCCION','LISTO','ENVIADA','ENTREGADA')
       WHERE u.role = 'VENDEDOR'
       GROUP BY u.id, u.name, u.email, sp.business_name, sp.rating_avg, sp.total_sales, sp.verified
-      ORDER BY revenue DESC
+      ORDER BY total_vendido DESC
     `);
     res.json(r.rows);
   } catch(e) { console.error('[stats/sellers]', e.message); res.status(500).json({ error: 'Error interno' }); }
@@ -1078,12 +1078,12 @@ app.get('/api/admin/stats/products', auth, role('ADMIN'), async (req, res) => {
   try {
     const r = await pool.query(`
       SELECT p.id, p.title AS producto, p.price, p.active,
-  c.name AS categoria,
-  u.name AS vendedor,
-  COALESCE(SUM(i.quantity),0) AS veces_vendido,
-  COALESCE(SUM(i.price),0) AS total_generado,
-  COALESCE(SUM(i.commission),0) AS comision_futura,
-  COALESCE(SUM(i.net),0) AS neto_vendedor
+        c.name AS categoria,
+        u.name AS vendedor,
+        COALESCE(SUM(i.quantity),0) AS veces_vendido,
+        COALESCE(SUM(i.price),0) AS total_generado,
+        COALESCE(SUM(i.commission),0) AS comision_futura,
+        COALESCE(SUM(i.net),0) AS neto_vendedor
       FROM products p
       JOIN users u ON u.id = p.seller_id
       LEFT JOIN categories c ON c.id = p.category_id
@@ -1091,27 +1091,26 @@ app.get('/api/admin/stats/products', auth, role('ADMIN'), async (req, res) => {
       LEFT JOIN orders o ON o.id = i.order_id
         AND o.status IN ('PAGADA','EN_PRODUCCION','LISTO','ENVIADA','ENTREGADA')
       GROUP BY p.id, p.title, p.price, p.active, c.name, u.name
-      ORDER BY revenue DESC
+      ORDER BY total_generado DESC
     `);
     res.json(r.rows);
   } catch(e) { console.error('[stats/products]', e.message); res.status(500).json({ error: 'Error interno' }); }
 });
-
 app.get('/api/admin/stats/categories', auth, role('ADMIN'), async (req, res) => {
   try {
     const r = await pool.query(`
       SELECT c.id, c.name AS categoria, c.commission_rate,
-  COUNT(DISTINCT p.id) AS total_products,
-  COALESCE(SUM(i.price),0) AS total_vendido,
-  COALESCE(SUM(i.commission),0) AS total_comision,
-  COUNT(DISTINCT i.id) AS num_ventas
+        COUNT(DISTINCT p.id) AS total_products,
+        COALESCE(SUM(i.price),0) AS total_vendido,
+        COALESCE(SUM(i.commission),0) AS total_comision,
+        COUNT(DISTINCT i.id) AS num_ventas
       FROM categories c
       LEFT JOIN products p ON p.category_id = c.id
       LEFT JOIN order_items i ON i.product_id = p.id
       LEFT JOIN orders o ON o.id = i.order_id
         AND o.status IN ('PAGADA','EN_PRODUCCION','LISTO','ENVIADA','ENTREGADA')
       GROUP BY c.id, c.name, c.commission_rate
-      ORDER BY revenue DESC
+      ORDER BY total_vendido DESC
     `);
     res.json(r.rows);
   } catch(e) { console.error('[stats/categories]', e.message); res.status(500).json({ error: 'Error interno' }); }
