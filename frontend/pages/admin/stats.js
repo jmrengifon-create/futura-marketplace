@@ -106,7 +106,7 @@ export default function AdminStats() {
   }));
 
   const sellerChart = sellers.map((s,i) => ({
-    name: s.vendedor.split(' ')[0],
+    name: s.vendedor?.split(' ')?.[0] || 'Vendedor',
     Vendido: parseFloat(s.total_vendido),
     Neto: parseFloat(s.total_neto),
     Comisión: parseFloat(s.total_comision),
@@ -452,7 +452,7 @@ export default function AdminStats() {
                   <>
                     <ResponsiveContainer width="100%" height={190}>
                       <PieChart>
-                        <Pie data={sellers.map(s=>({name:s.vendedor.split(' ')[0],value:parseFloat(s.total_vendido)}))}
+                        <Pie data={sellers.map(s=>({name: s.vendedor?.split(' ')?.[0] || 'Vendedor',value:parseFloat(s.total_vendido)}))}
                           cx="50%" cy="50%" outerRadius={85} paddingAngle={3} dataKey="value" stroke="none">
                           {sellers.map((_,i) => <Cell key={i} fill={PALETTE[i%PALETTE.length]}/>)}
                         </Pie>
@@ -465,7 +465,7 @@ export default function AdminStats() {
                         return (
                           <div key={s.id} style={{ display:'flex', alignItems:'center', gap: 8 }}>
                             <div style={{ width:10,height:10,borderRadius:'50%',background:PALETTE[i%PALETTE.length],flexShrink:0 }}/>
-                            <span style={{ flex:1, fontSize:12, color:C.textDim }}>{s.vendedor.split(' ')[0]}</span>
+                            <span style=...>{s.vendedor?.split(' ')?.[0]}</span>
                             <div style={{ width: 80, height: 4, background:`${PALETTE[i%PALETTE.length]}20`, borderRadius: 2 }}>
                               <div style={{ width:`${pct}%`, height:'100%', background:PALETTE[i%PALETTE.length], borderRadius: 2 }}/>
                             </div>
