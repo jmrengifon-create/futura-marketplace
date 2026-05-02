@@ -164,12 +164,11 @@ app.post('/api/admin/inventory', auth, role('ADMIN'), async (req, res) => {
     const r = await pool.query(
       `INSERT INTO inventory(location_id,item_name,item_type,qr_code,quantity,min_quantity,unit_cost,unit_price,status)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,'DISPONIBLE') RETURNING *`,
-      [location_id, item_name, item_type || 'PRODUCTO', qr_code, quantity || 0, min_quantity || 1, unit_cost || 0, unit_price || 0]
+      [location_id, item_name, item_type||'PRODUCTO', qr_code, quantity||0, min_quantity||1, unit_cost||0, unit_price||0]
     );
     res.json(r.rows[0]);
   } catch(e) { console.error('[inventory POST]', e.message); res.status(500).json({ error: 'Error interno' }); }
 });
-
 app.put('/api/admin/inventory/:id', auth, role('ADMIN'), async (req, res) => {
   try {
     const { quantity, min_quantity, unit_cost, unit_price, status } = req.body;
@@ -320,15 +319,10 @@ app.post('/api/admin/social-posts', auth, role('ADMIN'), async (req, res) => {
     if (!title || !content) return res.status(400).json({ error: 'Título y contenido requeridos' });
     const adminUser = await pool.query('SELECT name FROM users WHERE id=$1', [req.user.id]);
     const adminName = adminUser.rows[0]?.name || 'Admin';
-    const r = await pool.query(
-      `INSERT INTO social_posts(admin_id,admin_name,title,content,media_url,platforms,scheduled_at,status)
-       VALUES($1,$2,$3,$4,$5,$6,$7,'PROGRAMADO') RETURNING *`,
-      [req.user.id, adminName, title, content, media_url || null, platforms || ['FACEBOOK'], scheduled_at || null]
-    );
+    const r = await pool.query('INSERT INTO social_posts(admin_id,admin_name,title,content,media_url,platforms,scheduled_at,status) VALUES($1,$2,$3,$4,$5,$6,$7,\'PROGRAMADO\') RETURNING *', [req.user.id, adminName, title, content, media_url || null, platforms || ['FACEBOOK'], scheduled_at || null]);
     res.json(r.rows[0]);
   } catch(e) { console.error('[social POST]', e.message); res.status(500).json({ error: 'Error interno' }); }
 });
-
 app.get('/api/admin/email-campaigns', auth, role('ADMIN'), async (req, res) => {
   try {
     const r = await pool.query('SELECT * FROM email_campaigns ORDER BY created_at DESC');
@@ -376,69 +370,6 @@ app.get('/api/admin/social-metrics', auth, role('ADMIN'), async (req, res) => {
 // ═══════════════════════════════════════════════════════════
 // CRÉDITOS
 // ═══════════════════════════════════════════════════════════
-
-app.get('/api/buyer/credits', auth, async (req, res) => {
-  try {
-    const r = await pool.query('SELECT * FROM buyer_credits WHERE buyer_id=$1 ORDER BY created_at DESC', [req.user.id]).catch(() => ({ rows: [] }));
-    res.json(r.rows);
-  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
-});
-
-app.post('/api/buyer/credits/request', auth, async (req, res) => {
-  try {
-    const { amount, installments } = req.body;
-    const monthly = (parseFloat(amount) / parseInt(installments)).toFixed(2);
-    const r = await pool.query(
-      `INSERT INTO buyer_credits(buyer_id,amount,installments,monthly_payment,status) VALUES($1,$2,$3,$4,'PENDIENTE') RETURNING *`,
-      [req.user.id, amount, installments, monthly]
-    );
-    const admins = await pool.query("SELECT id FROM users WHERE role='ADMIN'");
-    const u = await pool.query('SELECT name FROM users WHERE id=$1', [req.user.id]);
-    for (const a of admins.rows) {
-      await notify(a.id, 'SOLICITUD_CREDITO', 'Nueva solicitud de crédito',
-        `${u.rows[0].name} solicita crédito de S/ ${amount} en ${installments} cuotas`, '/admin/credits');
-    }
-    res.json(r.rows[0]);
-  } catch(e) { console.error('[credit req]', e.message); res.status(500).json({ error: 'Error interno' }); }
-});
-
-app.get('/api/admin/credits', auth, role('ADMIN'), async (req, res) => {
-  try {
-    const r = await pool.query(`
-      SELECT bc.*, u.name AS buyer_name, u.email AS buyer_email
-      FROM buyer_credits bc JOIN users u ON u.id=bc.buyer_id
-      ORDER BY bc.created_at DESC`).catch(() => ({ rows: [] }));
-    const stats = await pool.query(`
-      SELECT COUNT(CASE WHEN status='ACTIVO' THEN 1 END) AS activos,
-        COUNT(CASE WHEN status='PENDIENTE' THEN 1 END) AS pendientes,
-        COALESCE(SUM(CASE WHEN status='ACTIVO' THEN amount END),0) AS portfolio
-      FROM buyer_credits`).catch(() => ({ rows: [{ activos: 0, pendientes: 0, portfolio: 0 }] }));
-    res.json({ credits: r.rows, stats: stats.rows[0] });
-  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
-});
-
-app.put('/api/admin/credits/:id/approve', auth, role('ADMIN'), async (req, res) => {
-  try {
-    const credit = await pool.query('SELECT * FROM buyer_credits WHERE id=$1', [req.params.id]);
-    if (!credit.rows.length) return res.status(404).json({ error: 'Crédito no encontrado' });
-    await pool.query("UPDATE buyer_credits SET status='ACTIVO',approved_by=$1,approved_at=now() WHERE id=$2", [req.user.id, req.params.id]);
-    await notify(credit.rows[0].buyer_id, 'CREDITO_APROBADO', '✅ Crédito aprobado',
-      `Tu solicitud de crédito por S/ ${credit.rows[0].amount} fue aprobada`, '/buyer/credits');
-    res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
-});
-
-app.put('/api/admin/credits/:id/reject', auth, role('ADMIN'), async (req, res) => {
-  try {
-    const { reason } = req.body;
-    const credit = await pool.query('SELECT * FROM buyer_credits WHERE id=$1', [req.params.id]);
-    if (!credit.rows.length) return res.status(404).json({ error: 'Crédito no encontrado' });
-    await pool.query("UPDATE buyer_credits SET status='RECHAZADO',rejected_reason=$1 WHERE id=$2", [reason, req.params.id]);
-    await notify(credit.rows[0].buyer_id, 'CREDITO_RECHAZADO', 'Crédito rechazado',
-      `Tu solicitud fue rechazada. Motivo: ${reason}`, '/buyer/credits');
-    res.json({ ok: true });
-  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
-});
 
 app.get('/api/buyer/receipts', auth, async (req, res) => {
   try {
@@ -617,7 +548,7 @@ app.post('/api/quotations', auth, role('COMPRADOR'), upload.array('designFiles',
     const qId = q.rows[0].id;
     if (req.files?.length) {
       for (const f of req.files) {
-        await pool.query('INSERT INTO design_files(quotation_id,uploaded_by,file_name,file_url,file_type,file_size) VALUES($1,$2,$3,$4,$5,$6)', [qId, req.user.id, f.originalname, f.path, f.mimetype, f.size]);
+    await pool.query('INSERT INTO design_files(quotation_id,uploaded_by,file_name,file_url,file_type,file_size) VALUES($1,$2,$3,$4,$5,$6)', [qId, req.user.id, f.originalname, f.path, f.mimetype, f.size]);
       }
     }
     const buyer = await pool.query('SELECT name FROM users WHERE id=$1', [req.user.id]);
@@ -1000,67 +931,6 @@ app.get('/api/admin/stats/monthly', auth, role('ADMIN'), async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Error interno' }); }
 });
 
-app.get('/api/admin/stats/sellers', auth, role('ADMIN'), async (req, res) => {
-  try {
-    const r = await pool.query(`
-      SELECT u.id, u.name, u.email, sp.business_name, sp.rating_avg,
-        sp.total_sales, sp.verified,
-        COALESCE(SUM(i.price),0) AS revenue,
-        COALESCE(SUM(i.commission),0) AS commission,
-        COUNT(DISTINCT o.id) AS orders
-      FROM users u
-      JOIN seller_profiles sp ON sp.user_id = u.id
-      LEFT JOIN order_items i ON i.seller_id = u.id
-      LEFT JOIN orders o ON o.id = i.order_id
-        AND o.status IN ('PAGADA','EN_PRODUCCION','LISTO','ENVIADA','ENTREGADA')
-      WHERE u.role = 'VENDEDOR'
-      GROUP BY u.id, u.name, u.email, sp.business_name, sp.rating_avg, sp.total_sales, sp.verified
-      ORDER BY revenue DESC
-    `);
-    res.json(r.rows);
-  } catch(e) { console.error('[stats/sellers]', e.message); res.status(500).json({ error: 'Error interno' }); }
-});
-
-app.get('/api/admin/stats/products', auth, role('ADMIN'), async (req, res) => {
-  try {
-    const r = await pool.query(`
-      SELECT p.id, p.title, p.price, p.active, c.name AS category_name,
-        u.name AS seller_name,
-        COALESCE(SUM(i.quantity),0) AS units_sold,
-        COALESCE(SUM(i.price),0) AS revenue
-      FROM products p
-      JOIN users u ON u.id = p.seller_id
-      LEFT JOIN categories c ON c.id = p.category_id
-      LEFT JOIN order_items i ON i.product_id = p.id
-      LEFT JOIN orders o ON o.id = i.order_id
-        AND o.status IN ('PAGADA','EN_PRODUCCION','LISTO','ENVIADA','ENTREGADA')
-      GROUP BY p.id, p.title, p.price, p.active, c.name, u.name
-      ORDER BY revenue DESC
-    `);
-    res.json(r.rows);
-  } catch(e) { console.error('[stats/products]', e.message); res.status(500).json({ error: 'Error interno' }); }
-});
-
-app.get('/api/admin/stats/categories', auth, role('ADMIN'), async (req, res) => {
-  try {
-    const r = await pool.query(`
-      SELECT c.id, c.name, c.commission_rate,
-        COUNT(DISTINCT p.id) AS total_products,
-        COALESCE(SUM(i.price),0) AS revenue,
-        COALESCE(SUM(i.commission),0) AS commission,
-        COUNT(DISTINCT i.id) AS total_orders
-      FROM categories c
-      LEFT JOIN products p ON p.category_id = c.id
-      LEFT JOIN order_items i ON i.product_id = p.id
-      LEFT JOIN orders o ON o.id = i.order_id
-        AND o.status IN ('PAGADA','EN_PRODUCCION','LISTO','ENVIADA','ENTREGADA')
-      GROUP BY c.id, c.name, c.commission_rate
-      ORDER BY revenue DESC
-    `);
-    res.json(r.rows);
-  } catch(e) { console.error('[stats/categories]', e.message); res.status(500).json({ error: 'Error interno' }); }
-});
-
 app.post('/api/admin/categories', auth, role('ADMIN'), async (req, res) => {
   try {
     const r = await pool.query('INSERT INTO categories(name,commission_rate) VALUES($1,$2) RETURNING *', [req.body.name, req.body.commission_rate || 10]);
@@ -1114,5 +984,395 @@ app.post('/api/webhook/mp', async (req, res) => { res.sendStatus(200); });
 const { registerFuturaModules } = require('./src/modules/app');
 registerFuturaModules(app);
 // ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// STATS ADICIONALES
+// ═══════════════════════════════════════════════════════════
 
+app.get('/api/admin/stats/sellers', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT u.id, u.name AS vendedor, u.email, sp.business_name, sp.rating_avg,
+        sp.total_sales, sp.verified,
+        COALESCE(SUM(i.price),0) AS total_vendido,
+        COALESCE(SUM(i.commission),0) AS total_comision,
+        COALESCE(SUM(i.net),0) AS total_neto,
+        COUNT(DISTINCT o.id) AS num_ventas
+      FROM users u
+      JOIN seller_profiles sp ON sp.user_id = u.id
+      LEFT JOIN order_items i ON i.seller_id = u.id
+      LEFT JOIN orders o ON o.id = i.order_id
+        AND o.status IN ('PAGADA','EN_PRODUCCION','LISTO','ENVIADA','ENTREGADA')
+      WHERE u.role = 'VENDEDOR'
+      GROUP BY u.id, u.name, u.email, sp.business_name, sp.rating_avg, sp.total_sales, sp.verified
+      ORDER BY total_vendido DESC
+    `);
+    res.json(r.rows);
+  } catch(e) { console.error('[stats/sellers]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.get('/api/admin/stats/products', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT p.id, p.title AS producto, p.price, p.active,
+        c.name AS categoria,
+        u.name AS vendedor,
+        COALESCE(SUM(i.quantity),0) AS veces_vendido,
+        COALESCE(SUM(i.price),0) AS total_generado,
+        COALESCE(SUM(i.commission),0) AS comision_futura,
+        COALESCE(SUM(i.net),0) AS neto_vendedor
+      FROM products p
+      JOIN users u ON u.id = p.seller_id
+      LEFT JOIN categories c ON c.id = p.category_id
+      LEFT JOIN order_items i ON i.product_id = p.id
+      LEFT JOIN orders o ON o.id = i.order_id
+        AND o.status IN ('PAGADA','EN_PRODUCCION','LISTO','ENVIADA','ENTREGADA')
+      GROUP BY p.id, p.title, p.price, p.active, c.name, u.name
+      ORDER BY total_generado DESC
+    `);
+    res.json(r.rows);
+  } catch(e) { console.error('[stats/products]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+app.get('/api/admin/stats/categories', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT c.id, c.name AS categoria, c.commission_rate,
+        COUNT(DISTINCT p.id) AS total_products,
+        COALESCE(SUM(i.price),0) AS total_vendido,
+        COALESCE(SUM(i.commission),0) AS total_comision,
+        COUNT(DISTINCT i.id) AS num_ventas
+      FROM categories c
+      LEFT JOIN products p ON p.category_id = c.id
+      LEFT JOIN order_items i ON i.product_id = p.id
+      LEFT JOIN orders o ON o.id = i.order_id
+        AND o.status IN ('PAGADA','EN_PRODUCCION','LISTO','ENVIADA','ENTREGADA')
+      GROUP BY c.id, c.name, c.commission_rate
+      ORDER BY total_vendido DESC
+    `);
+    res.json(r.rows);
+  } catch(e) { console.error('[stats/categories]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+// ═══════════════════════════════════════════════════════════
+// SISTEMA DE CRÉDITOS AVANZADO
+// ═══════════════════════════════════════════════════════════
+
+// Obtener tasa de interés según plazo
+const getCreditRate = async (installments) => {
+  const r = await pool.query(
+    'SELECT monthly_rate FROM credit_rates WHERE min_installments<=$1 AND max_installments>=$1 AND active=TRUE LIMIT 1',
+    [installments]
+  );
+  return r.rows.length ? parseFloat(r.rows[0].monthly_rate) : 0;
+};
+
+// Generar tabla de amortización
+const generateAmortization = (creditId, buyerId, amount, installments, monthlyRate, startDate) => {
+  const rows = [];
+  let balance = parseFloat(amount);
+  const rate = monthlyRate / 100;
+  const payment = rate === 0
+    ? balance / installments
+    : (balance * rate * Math.pow(1 + rate, installments)) / (Math.pow(1 + rate, installments) - 1);
+
+  for (let i = 1; i <= installments; i++) {
+    const interest  = balance * rate;
+    const principal = payment - interest;
+    const dueDate   = new Date(startDate);
+    dueDate.setMonth(dueDate.getMonth() + i);
+    rows.push({
+      credit_id: creditId, buyer_id: buyerId,
+      installment_num: i,
+      due_date: dueDate.toISOString().split('T')[0],
+      amount: payment.toFixed(2),
+      principal: principal.toFixed(2),
+      interest: interest.toFixed(2),
+      penalty: 0, status: 'PENDIENTE'
+    });
+    balance -= principal;
+  }
+  return rows;
+};
+
+// ── COMPRADOR: solicitar crédito ──────────────────────────
+app.post('/api/buyer/credits/request', auth, async (req, res) => {
+  try {
+    const { amount, installments, notes } = req.body;
+    if (!amount || !installments) return res.status(400).json({ error: 'Monto y cuotas requeridos' });
+    const rate       = await getCreditRate(parseInt(installments));
+    const r          = parseFloat(rate) / 100;
+    const n          = parseInt(installments);
+    const A          = parseFloat(amount);
+    const payment    = r === 0 ? A / n : (A * r * Math.pow(1+r,n)) / (Math.pow(1+r,n)-1);
+    const totalWithI = payment * n;
+    const monthly    = payment;
+    const credit = await pool.query(
+      `INSERT INTO buyer_credits(buyer_id,amount,installments,monthly_payment,interest_rate,total_with_interest,status,notes)
+       VALUES($1,$2,$3,$4,$5,$6,'PENDIENTE',$7) RETURNING *`,
+      [req.user.id, A, n, monthly.toFixed(2), rate, totalWithI.toFixed(2), notes||null]
+    );
+    const admins = await pool.query("SELECT id FROM users WHERE role='ADMIN'");
+    const u = await pool.query('SELECT name FROM users WHERE id=$1', [req.user.id]);
+    for (const a of admins.rows) {
+      await notify(a.id, 'SOLICITUD_CREDITO', '💳 Nueva solicitud de crédito',
+        `${u.rows[0].name} solicita S/ ${A} en ${n} cuotas (${rate}% mensual)`, '/admin/credits');
+    }
+    res.json({ ok: true, credit: credit.rows[0], monthly_payment: monthly.toFixed(2), interest_rate: rate, total: totalWithI.toFixed(2) });
+  } catch(e) { console.error('[credit request]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+// ── COMPRADOR: ver mis créditos y cuotas ─────────────────
+app.get('/api/buyer/credits', auth, async (req, res) => {
+  try {
+    const credits = await pool.query(
+      `SELECT bc.*, 
+        COUNT(ci.id) AS total_cuotas,
+        COUNT(CASE WHEN ci.status='PAGADA' THEN 1 END) AS cuotas_pagadas,
+        COUNT(CASE WHEN ci.status='VENCIDA' THEN 1 END) AS cuotas_vencidas,
+        COUNT(CASE WHEN ci.status='PENDIENTE' THEN 1 END) AS cuotas_pendientes
+       FROM buyer_credits bc
+       LEFT JOIN credit_installments ci ON ci.credit_id=bc.id
+       WHERE bc.buyer_id=$1
+       GROUP BY bc.id ORDER BY bc.created_at DESC`,
+      [req.user.id]
+    );
+    const installments = await pool.query(
+      'SELECT * FROM credit_installments WHERE buyer_id=$1 ORDER BY due_date ASC',
+      [req.user.id]
+    );
+    res.json({ credits: credits.rows, installments: installments.rows });
+  } catch(e) { console.error('[buyer credits]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+// ── COMPRADOR: pagar cuota ────────────────────────────────
+app.post('/api/buyer/credits/:creditId/pay/:installmentId', auth, async (req, res) => {
+  try {
+    const { creditId, installmentId } = req.params;
+    const { amount, payment_method, reference_code, notes } = req.body;
+    const inst = await pool.query('SELECT * FROM credit_installments WHERE id=$1 AND credit_id=$2 AND buyer_id=$3',
+      [installmentId, creditId, req.user.id]);
+    if (!inst.rows.length) return res.status(404).json({ error: 'Cuota no encontrada' });
+    const cuota = inst.rows[0];
+    const totalDue = parseFloat(cuota.amount) + parseFloat(cuota.penalty||0);
+    const paid = parseFloat(amount);
+    const newStatus = paid >= totalDue ? 'PAGADA' : 'PARCIAL';
+    const isOnTime  = new Date() <= new Date(cuota.due_date);
+
+    await pool.query(
+      `UPDATE credit_installments SET status=$1, paid_amount=$2, paid_at=NOW() WHERE id=$3`,
+      [newStatus, paid, installmentId]
+    );
+    await pool.query(
+      `INSERT INTO credit_payments(credit_id,installment_id,buyer_id,amount,payment_method,reference_code,notes)
+       VALUES($1,$2,$3,$4,$5,$6,$7)`,
+      [creditId, installmentId, req.user.id, paid, payment_method||'MANUAL', reference_code||null, notes||null]
+    );
+
+    // Actualizar cuotas pagadas en crédito
+    await pool.query(
+      `UPDATE buyer_credits SET paid_installments=paid_installments+1 WHERE id=$1`,
+      [creditId]
+    );
+
+    // Beneficio por pago puntual
+    if (newStatus === 'PAGADA' && isOnTime) {
+      await pool.query(
+        `UPDATE buyer_credits SET good_payer_score=good_payer_score+1 WHERE id=$1`, [creditId]
+      );
+      const score = await pool.query('SELECT good_payer_score FROM buyer_credits WHERE id=$1', [creditId]);
+      const s = parseInt(score.rows[0].good_payer_score);
+      if (s % 3 === 0) {
+        await pool.query(
+          `INSERT INTO credit_benefits(buyer_id,benefit_type,benefit_value,description,expires_at)
+           VALUES($1,'DESCUENTO',5,'5% descuento por pago puntual',NOW()+'90 days'::interval)`,
+          [req.user.id]
+        );
+        await pool.query(
+          `INSERT INTO credit_benefits(buyer_id,benefit_type,benefit_value,description,expires_at)
+           VALUES($1,'MEJOR_TASA',0.5,'0.5% menos en próximo crédito',NOW()+'180 days'::interval)`,
+          [req.user.id]
+        );
+        await pool.query(
+          `INSERT INTO credit_benefits(buyer_id,benefit_type,benefit_value,description,expires_at)
+           VALUES($1,'BADGE',0,'Buen Pagador ⭐',NULL)`,
+          [req.user.id]
+        );
+        await notify(req.user.id, 'BENEFICIO', '⭐ ¡Ganaste beneficios!',
+          'Por tus pagos puntuales obtuviste descuentos y mejor tasa', '/buyer/credits');
+      }
+    }
+
+    // Verificar si crédito está completamente pagado
+    const pending = await pool.query(
+      `SELECT COUNT(*) FROM credit_installments WHERE credit_id=$1 AND status NOT IN ('PAGADA')`,
+      [creditId]
+    );
+    if (parseInt(pending.rows[0].count) === 0) {
+      await pool.query("UPDATE buyer_credits SET status='PAGADO' WHERE id=$1", [creditId]);
+    }
+
+    res.json({ ok: true, status: newStatus, on_time: isOnTime });
+  } catch(e) { console.error('[credit pay]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+// ── ADMIN: ver todos los créditos con semáforo ───────────
+app.get('/api/admin/credits', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const credits = await pool.query(`
+      SELECT bc.*, u.name AS buyer_name, u.email AS buyer_email,
+        COUNT(ci.id) AS total_cuotas,
+        COUNT(CASE WHEN ci.status='PAGADA' THEN 1 END) AS cuotas_pagadas,
+        COUNT(CASE WHEN ci.status='VENCIDA' THEN 1 END) AS cuotas_vencidas,
+        COALESCE(SUM(CASE WHEN ci.status='VENCIDA' THEN ci.amount+ci.penalty END),0) AS monto_vencido
+      FROM buyer_credits bc
+      JOIN users u ON u.id=bc.buyer_id
+      LEFT JOIN credit_installments ci ON ci.credit_id=bc.id
+      GROUP BY bc.id, u.name, u.email
+      ORDER BY bc.created_at DESC`);
+    const stats = await pool.query(`
+      SELECT
+        COUNT(CASE WHEN status='ACTIVO' THEN 1 END) AS activos,
+        COUNT(CASE WHEN status='PENDIENTE' THEN 1 END) AS pendientes,
+        COUNT(CASE WHEN overdue_count>0 THEN 1 END) AS con_mora,
+        COALESCE(SUM(CASE WHEN status='ACTIVO' THEN amount END),0) AS portfolio
+      FROM buyer_credits`);
+    const rates = await pool.query('SELECT * FROM credit_rates WHERE active=TRUE ORDER BY min_installments');
+    res.json({ credits: credits.rows, stats: stats.rows[0], rates: rates.rows });
+  } catch(e) { console.error('[admin credits]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+// ── ADMIN: aprobar crédito y generar amortización ────────
+app.put('/api/admin/credits/:id/approve', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const credit = await pool.query('SELECT * FROM buyer_credits WHERE id=$1', [req.params.id]);
+    if (!credit.rows.length) return res.status(404).json({ error: 'Crédito no encontrado' });
+    const c = credit.rows[0];
+    await pool.query(
+      `UPDATE buyer_credits SET status='ACTIVO', approved_by=$1, approved_at=NOW() WHERE id=$2`,
+      [req.user.id, req.params.id]
+    );
+    // Generar cuotas
+    const rows = generateAmortization(c.id, c.buyer_id, c.amount, c.installments, c.interest_rate, new Date());
+    for (const row of rows) {
+      await pool.query(
+        `INSERT INTO credit_installments(credit_id,buyer_id,installment_num,due_date,amount,principal,interest,penalty,status)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,'PENDIENTE')`,
+        [row.credit_id, row.buyer_id, row.installment_num, row.due_date, row.amount, row.principal, row.interest, row.penalty]
+      );
+    }
+    await notify(c.buyer_id, 'CREDITO_APROBADO', '✅ Crédito aprobado',
+      `Tu crédito de S/ ${c.amount} en ${c.installments} cuotas fue aprobado. Cuota mensual: S/ ${c.monthly_payment}`, '/buyer/credits');
+    res.json({ ok: true, installments: rows.length });
+  } catch(e) { console.error('[credit approve]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+// ── ADMIN: rechazar crédito ───────────────────────────────
+app.put('/api/admin/credits/:id/reject', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const { reason } = req.body;
+    const credit = await pool.query('SELECT * FROM buyer_credits WHERE id=$1', [req.params.id]);
+    if (!credit.rows.length) return res.status(404).json({ error: 'Crédito no encontrado' });
+    await pool.query(
+      "UPDATE buyer_credits SET status='RECHAZADO', rejected_reason=$1 WHERE id=$2",
+      [reason||'Sin motivo especificado', req.params.id]
+    );
+    await notify(credit.rows[0].buyer_id, 'CREDITO_RECHAZADO', '❌ Crédito rechazado',
+      `Tu solicitud fue rechazada. Motivo: ${reason}`, '/buyer/credits');
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// ── ADMIN: registrar pago manual ──────────────────────────
+app.post('/api/admin/credits/:creditId/pay/:installmentId', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const { amount, payment_method, reference_code, notes } = req.body;
+    const inst = await pool.query('SELECT * FROM credit_installments WHERE id=$1', [req.params.installmentId]);
+    if (!inst.rows.length) return res.status(404).json({ error: 'Cuota no encontrada' });
+    const cuota    = inst.rows[0];
+    const totalDue = parseFloat(cuota.amount) + parseFloat(cuota.penalty||0);
+    const paid     = parseFloat(amount);
+    const status   = paid >= totalDue ? 'PAGADA' : 'PARCIAL';
+    await pool.query('UPDATE credit_installments SET status=$1,paid_amount=$2,paid_at=NOW() WHERE id=$3',
+      [status, paid, req.params.installmentId]);
+    await pool.query(
+      `INSERT INTO credit_payments(credit_id,installment_id,buyer_id,amount,payment_method,reference_code,registered_by,notes)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [req.params.creditId, req.params.installmentId, cuota.buyer_id, paid,
+       payment_method||'MANUAL', reference_code||null, req.user.id, notes||null]
+    );
+    await pool.query('UPDATE buyer_credits SET paid_installments=paid_installments+1 WHERE id=$1', [req.params.creditId]);
+    await notify(cuota.buyer_id, 'PAGO_REGISTRADO', '✅ Pago registrado',
+      `Se registró tu pago de S/ ${paid} para cuota #${cuota.installment_num}`, '/buyer/credits');
+    res.json({ ok: true, status });
+  } catch(e) { console.error('[admin pay]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+// ── ADMIN: detectar mora y aplicar penalidades (cron) ────
+app.post('/api/admin/credits/check-overdue', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const overdue = await pool.query(
+      `SELECT ci.*, bc.amount AS credit_amount FROM credit_installments ci
+       JOIN buyer_credits bc ON bc.id=ci.credit_id
+       WHERE ci.status='PENDIENTE' AND ci.due_date < CURRENT_DATE`
+    );
+    let updated = 0;
+    for (const inst of overdue.rows) {
+      const daysOverdue = Math.floor((new Date() - new Date(inst.due_date)) / (1000*60*60*24));
+      const monthsOverdue = Math.ceil(daysOverdue / 30);
+      const pendingBalance = parseFloat(inst.amount) - parseFloat(inst.paid_amount||0);
+      const penalty = pendingBalance * 0.015 * monthsOverdue;
+      await pool.query(
+        `UPDATE credit_installments SET status='VENCIDA', days_overdue=$1, penalty=$2 WHERE id=$3`,
+        [daysOverdue, penalty.toFixed(2), inst.id]
+      );
+      await pool.query(
+        `UPDATE buyer_credits SET overdue_count=overdue_count+1, penalty_amount=penalty_amount+$1 WHERE id=$2`,
+        [penalty.toFixed(2), inst.credit_id]
+      );
+      // Bloquear si tiene más de 2 cuotas vencidas
+      const overdueCount = await pool.query(
+        `SELECT COUNT(*) FROM credit_installments WHERE credit_id=$1 AND status='VENCIDA'`,
+        [inst.credit_id]
+      );
+      if (parseInt(overdueCount.rows[0].count) >= 2) {
+        await pool.query(
+          `UPDATE buyer_credits SET blocked=TRUE, blocked_reason='Más de 2 cuotas vencidas' WHERE id=$1`,
+          [inst.credit_id]
+        );
+        await notify(inst.buyer_id, 'CREDITO_BLOQUEADO', '🚫 Crédito bloqueado',
+          'Tu crédito fue bloqueado por cuotas vencidas. Contáctanos para regularizar.', '/buyer/credits');
+      } else {
+        await notify(inst.buyer_id, 'CUOTA_VENCIDA', '⚠️ Cuota vencida',
+          `Tienes una cuota vencida de S/ ${inst.amount}. Se aplicó penalidad de S/ ${penalty.toFixed(2)}`, '/buyer/credits');
+      }
+      updated++;
+    }
+    res.json({ ok: true, updated, message: `${updated} cuotas procesadas` });
+  } catch(e) { console.error('[check-overdue]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+// ── ADMIN: ver tasas de interés ───────────────────────────
+app.get('/api/admin/credit-rates', auth, async (req, res) => {
+  try {
+    const r = await pool.query('SELECT * FROM credit_rates ORDER BY min_installments');
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.put('/api/admin/credit-rates/:id', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const { monthly_rate } = req.body;
+    await pool.query('UPDATE credit_rates SET monthly_rate=$1 WHERE id=$2', [monthly_rate, req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// ── COMPRADOR: ver mis beneficios ─────────────────────────
+app.get('/api/buyer/credits/benefits', auth, async (req, res) => {
+  try {
+    const r = await pool.query(
+      'SELECT * FROM credit_benefits WHERE buyer_id=$1 ORDER BY created_at DESC',
+      [req.user.id]
+    );
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
 app.listen(3001, () => console.log('✅ Backend Futura v5.0 activo en puerto 3001'));
