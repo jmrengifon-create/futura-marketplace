@@ -75,19 +75,33 @@ if (productAmount) {
   const calcTotal = () => (parseFloat(calcPayment()) * parseInt(form.installments||1)).toFixed(2);
 
   const requestCredit = async (e) => {
-    e.preventDefault();
-    setSending(true);
-    try {
-      const r = await apiFetch('/api/buyer/credits/request', {
-        method:'POST', body:JSON.stringify({ amount:parseFloat(form.amount), installments:parseInt(form.installments), notes:form.notes })
-      });
-      setMsg(`✅ Solicitud enviada. Cuota mensual: ${fmt(r.monthly_payment)} · Tasa: ${r.interest_rate}% mensual`);
-      setForm({ amount:'', installments:'3', notes:'' });
-      setShowForm(false);
-      loadAll();
-    } catch(e) { setMsg('❌ '+e.message); }
-    setSending(false);
-  };
+  e.preventDefault();
+  setSending(true);
+  try {
+    // Leer producto de la URL si existe
+    const params      = new URLSearchParams(window.location.search);
+    const product_id    = params.get('product') || null;
+    const product_name  = params.get('name')    || null;
+    const product_price = params.get('amount')  || null;
+
+    const r = await apiFetch('/api/buyer/credits/request', {
+      method: 'POST',
+      body: JSON.stringify({
+        amount:        parseFloat(form.amount),
+        installments:  parseInt(form.installments),
+        notes:         form.notes,
+        product_id:    product_id ? parseInt(product_id) : null,
+        product_name,
+        product_price: product_price ? parseFloat(product_price) : null,
+      })
+    });
+    setMsg(`✅ Solicitud enviada. Cuota mensual: ${fmt(r.monthly_payment)} · Tasa: ${r.interest_rate}% mensual`);
+    setForm({ amount:'', installments:'3', notes:'' });
+    setShowForm(false);
+    loadAll();
+  } catch(e) { setMsg('❌ '+e.message); }
+  setSending(false);
+};
 
   const payInstallment = async (creditId, instId) => {
     setSending(true);
