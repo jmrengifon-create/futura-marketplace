@@ -18,33 +18,38 @@ const CREDIT_STATUS = {
 };
 
 export default function BuyerCredits() {
-if (typeof window === 'undefined') return null;
-  const [credits, setCredits]           = useState([]);
+  const [credits,      setCredits]      = useState([]);
   const [installments, setInstallments] = useState([]);
-  const [benefits, setBenefits]         = useState([]);
-  const [rates, setRates]               = useState([]);
-  const [loading, setLoading]           = useState(true);
-  const [tab, setTab]                   = useState('creditos');
-  const [msg, setMsg]                   = useState('');
-  const [form, setForm]                 = useState({ amount:'', installments:'3', notes:'' });
-  const [paying, setPaying]             = useState(null);
-  const [payForm, setPayForm]           = useState({ amount:'', payment_method:'TRANSFERENCIA', reference_code:'' });
-  const [sending, setSending]           = useState(false);
-  const [showForm, setShowForm]         = useState(false);
+  const [benefits,     setBenefits]     = useState([]);
+  const [rates,        setRates]        = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [tab,          setTab]          = useState('creditos');
+  const [msg,          setMsg]          = useState('');
+  const [form,         setForm]         = useState({ amount:'', installments:'3', notes:'' });
+  const [paying,       setPaying]       = useState(null);
+  const [payForm,      setPayForm]      = useState({ amount:'', payment_method:'TRANSFERENCIA', reference_code:'' });
+  const [sending,      setSending]      = useState(false);
+  const [showForm,     setShowForm]     = useState(false);
+  const [mounted,      setMounted]      = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     const token = localStorage.getItem('token');
     if (!token) { window.location.href='/login'; return; }
+
+    // Leer parámetros de URL
+    const params        = new URLSearchParams(window.location.search);
+    const productAmount = params.get('amount');
+    const productName   = params.get('name');
+    if (productAmount) {
+      setForm(prev => ({ ...prev, amount: productAmount }));
+      setShowForm(true);
+      if (productName) setMsg(`💳 Financiando: ${decodeURIComponent(productName)}`);
+    }
+
     loadAll();
   }, []);
-  const params = new URLSearchParams(window.location.search);
-const productAmount = params.get('amount');
-const productName   = params.get('name');
-if (productAmount) {
-  setForm(prev => ({ ...prev, amount: productAmount }));
-  setShowForm(true);
-  setMsg(`💳 Financiando: ${productName || 'producto seleccionado'}`);
-}
+
   const loadAll = async () => {
     setLoading(true);
     try {
@@ -53,8 +58,10 @@ if (productAmount) {
         apiFetch('/api/buyer/credits/benefits').catch(()=>[]),
         apiFetch('/api/admin/credit-rates').catch(()=>[]),
       ]);
-      setCredits(c.credits||[]); setInstallments(c.installments||[]);
-      setBenefits(Array.isArray(b)?b:[]); setRates(Array.isArray(r)?r:[]);
+      setCredits(c.credits||[]);
+      setInstallments(c.installments||[]);
+      setBenefits(Array.isArray(b)?b:[]);
+      setRates(Array.isArray(r)?r:[]);
     } catch(e) { setMsg('❌ '+e.message); }
     setLoading(false);
   };
@@ -76,33 +83,32 @@ if (productAmount) {
   const calcTotal = () => (parseFloat(calcPayment()) * parseInt(form.installments||1)).toFixed(2);
 
   const requestCredit = async (e) => {
-  e.preventDefault();
-  setSending(true);
-  try {
-    // Leer producto de la URL si existe
-    const params      = new URLSearchParams(window.location.search);
-    const product_id    = params.get('product') || null;
-    const product_name  = params.get('name')    || null;
-    const product_price = params.get('amount')  || null;
+    e.preventDefault();
+    setSending(true);
+    try {
+      const params        = new URLSearchParams(window.location.search);
+      const product_id    = params.get('product')  || null;
+      const product_name  = params.get('name')     || null;
+      const product_price = params.get('amount')   || null;
 
-    const r = await apiFetch('/api/buyer/credits/request', {
-      method: 'POST',
-      body: JSON.stringify({
-        amount:        parseFloat(form.amount),
-        installments:  parseInt(form.installments),
-        notes:         form.notes,
-        product_id:    product_id ? parseInt(product_id) : null,
-        product_name,
-        product_price: product_price ? parseFloat(product_price) : null,
-      })
-    });
-    setMsg(`✅ Solicitud enviada. Cuota mensual: ${fmt(r.monthly_payment)} · Tasa: ${r.interest_rate}% mensual`);
-    setForm({ amount:'', installments:'3', notes:'' });
-    setShowForm(false);
-    loadAll();
-  } catch(e) { setMsg('❌ '+e.message); }
-  setSending(false);
-};
+      const r = await apiFetch('/api/buyer/credits/request', {
+        method: 'POST',
+        body: JSON.stringify({
+          amount:        parseFloat(form.amount),
+          installments:  parseInt(form.installments),
+          notes:         form.notes,
+          product_id:    product_id ? parseInt(product_id) : null,
+          product_name:  product_name ? decodeURIComponent(product_name) : null,
+          product_price: product_price ? parseFloat(product_price) : null,
+        })
+      });
+      setMsg(`✅ Solicitud enviada. Cuota: ${fmt(r.monthly_payment)} · Tasa: ${r.interest_rate}% mensual`);
+      setForm({ amount:'', installments:'3', notes:'' });
+      setShowForm(false);
+      loadAll();
+    } catch(e) { setMsg('❌ '+e.message); }
+    setSending(false);
+  };
 
   const payInstallment = async (creditId, instId) => {
     setSending(true);
@@ -118,9 +124,8 @@ if (productAmount) {
     setSending(false);
   };
 
-  const activeCredit = credits.find(c=>c.status==='ACTIVO');
-  const pendingInsts = installments.filter(i=>i.status!=='PAGADA');
-  const overdueInsts = installments.filter(i=>i.status==='VENCIDA');
+  // SSR guard — no renderizar hasta que esté en el cliente
+  if (!mounted) return null;
 
   if (loading) return (
     <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:'#f0f4f8' }}>
@@ -128,13 +133,14 @@ if (productAmount) {
     </div>
   );
 
+  const activeCredit = credits.find(c=>c.status==='ACTIVO');
+
   return (
     <div style={{ fontFamily:"'Segoe UI',sans-serif", background:'#f0f4f8', minHeight:'100vh' }}>
       <style>{`
         .btn{background:linear-gradient(135deg,#2563eb,#3b82f6);color:white;border:none;border-radius:10px;padding:10px 20px;font-weight:700;cursor:pointer;font-size:13px}
         .btn:hover{opacity:0.9} .btn:disabled{opacity:0.6;cursor:not-allowed}
         .btn-green{background:linear-gradient(135deg,#15803d,#22c55e)}
-        .btn-red{background:linear-gradient(135deg,#dc2626,#ef4444)}
         .card{background:white;border-radius:16px;padding:22px;box-shadow:0 2px 12px rgba(0,0,0,0.06)}
         input:focus,textarea:focus,select:focus{outline:none;border-color:#2563eb!important}
         @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
@@ -152,7 +158,7 @@ if (productAmount) {
             + Solicitar Crédito
           </button>
         </div>
-        <div style={{ maxWidth:1100, margin:'0 auto', display:'flex', gap:2, paddingBottom:0 }}>
+        <div style={{ maxWidth:1100, margin:'0 auto', display:'flex', gap:2 }}>
           {[['creditos','💳 Mis Créditos'],['cuotas','📅 Mis Cuotas'],['beneficios','⭐ Beneficios']].map(([k,l])=>(
             <button key={k} onClick={()=>setTab(k)} style={{ padding:'8px 14px', border:'none', background:'transparent', cursor:'pointer', fontSize:13, fontWeight:tab===k?700:400, color:tab===k?'white':'#64748b', borderBottom:tab===k?'3px solid #3B75C0':'3px solid transparent' }}>{l}</button>
           ))}
@@ -163,22 +169,25 @@ if (productAmount) {
 
         {msg && (
           <div style={{ padding:'12px 16px', borderRadius:10, marginBottom:16, fontWeight:600, background:msg.startsWith('✅')?'#f0fdf4':'#fef2f2', color:msg.startsWith('✅')?'#15803d':'#dc2626', display:'flex', justifyContent:'space-between' }}>
-            <span>{msg}</span><button onClick={()=>setMsg('')} style={{ background:'none',border:'none',cursor:'pointer' }}>×</button>
+            <span>{msg}</span>
+            <button onClick={()=>setMsg('')} style={{ background:'none',border:'none',cursor:'pointer' }}>×</button>
           </div>
         )}
 
-        {/* Formulario solicitud */}
+        {/* Formulario */}
         {showForm && (
           <div className="card" style={{ marginBottom:20, border:'2px solid #2563eb20' }}>
             <h3 style={{ margin:'0 0 16px', fontSize:15, fontWeight:800, color:'#0D3B87' }}>💳 Solicitar Crédito</h3>
             <form onSubmit={requestCredit} style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
               <div>
-                <label style={{ fontSize:11, fontWeight:700, color:'#64748b', display:'block', marginBottom:6, textTransform:'uppercase' }}>Monto a solicitar</label>
-                <input required type="number" min="100" max="50000" value={form.amount} onChange={e=>setForm(p=>({...p,amount:e.target.value}))}
-                  placeholder="S/ 1000" style={{ width:'100%', padding:'10px 14px', borderRadius:10, border:'1.5px solid #e5e7eb', fontSize:14, boxSizing:'border-box' }}/>
+                <label style={{ fontSize:11, fontWeight:700, color:'#64748b', display:'block', marginBottom:6, textTransform:'uppercase' }}>Monto</label>
+                <input required type="number" min="100" value={form.amount}
+                  onChange={e=>setForm(p=>({...p,amount:e.target.value}))}
+                  placeholder="S/ 1000"
+                  style={{ width:'100%', padding:'10px 14px', borderRadius:10, border:'1.5px solid #e5e7eb', fontSize:14, boxSizing:'border-box' }}/>
               </div>
               <div>
-                <label style={{ fontSize:11, fontWeight:700, color:'#64748b', display:'block', marginBottom:6, textTransform:'uppercase' }}>Número de cuotas</label>
+                <label style={{ fontSize:11, fontWeight:700, color:'#64748b', display:'block', marginBottom:6, textTransform:'uppercase' }}>Cuotas</label>
                 <select value={form.installments} onChange={e=>setForm(p=>({...p,installments:e.target.value}))}
                   style={{ width:'100%', padding:'10px 14px', borderRadius:10, border:'1.5px solid #e5e7eb', fontSize:14 }}>
                   {[1,2,3,4,6,8,10,12,18,24].map(n=>(
@@ -187,9 +196,10 @@ if (productAmount) {
                 </select>
               </div>
               <div style={{ gridColumn:'1/-1' }}>
-                <label style={{ fontSize:11, fontWeight:700, color:'#64748b', display:'block', marginBottom:6, textTransform:'uppercase' }}>Notas (opcional)</label>
+                <label style={{ fontSize:11, fontWeight:700, color:'#64748b', display:'block', marginBottom:6, textTransform:'uppercase' }}>Notas</label>
                 <textarea value={form.notes} onChange={e=>setForm(p=>({...p,notes:e.target.value}))} rows={2}
-                  placeholder="Motivo del crédito..." style={{ width:'100%', padding:'10px 14px', borderRadius:10, border:'1.5px solid #e5e7eb', fontSize:14, resize:'vertical', boxSizing:'border-box' }}/>
+                  placeholder="Motivo del crédito..."
+                  style={{ width:'100%', padding:'10px 14px', borderRadius:10, border:'1.5px solid #e5e7eb', fontSize:14, resize:'vertical', boxSizing:'border-box' }}/>
               </div>
               {form.amount && (
                 <div style={{ gridColumn:'1/-1', background:'#eff6ff', borderRadius:12, padding:16, display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:12 }}>
@@ -202,13 +212,13 @@ if (productAmount) {
                 <button type="submit" className="btn btn-green" disabled={sending} style={{ flex:1, padding:12 }}>
                   {sending?'Enviando...':'💳 Solicitar Crédito'}
                 </button>
-                <button type="button" onClick={()=>setShowForm(false)} style={{ padding:'12px 20px', borderRadius:10, border:'1.5px solid #e5e7eb', background:'white', cursor:'pointer', fontWeight:600 }}>
+                <button type="button" onClick={()=>setShowForm(false)}
+                  style={{ padding:'12px 20px', borderRadius:10, border:'1.5px solid #e5e7eb', background:'white', cursor:'pointer', fontWeight:600 }}>
                   Cancelar
                 </button>
               </div>
             </form>
-            {/* Tabla de tasas */}
-            {rates.length > 0 && (
+            {rates.length>0 && (
               <div style={{ marginTop:16, borderTop:'1px solid #f1f5f9', paddingTop:16 }}>
                 <div style={{ fontSize:11, fontWeight:700, color:'#64748b', textTransform:'uppercase', marginBottom:8 }}>Tasas de interés</div>
                 <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
@@ -224,7 +234,7 @@ if (productAmount) {
           </div>
         )}
 
-        {/* TAB: Créditos */}
+        {/* TAB Créditos */}
         {tab==='creditos' && (
           <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
             {credits.length===0 ? (
@@ -234,9 +244,9 @@ if (productAmount) {
                 <div style={{ color:'#64748b', marginBottom:20 }}>Solicita tu primer crédito y recibe aprobación rápida</div>
                 <button onClick={()=>setShowForm(true)} className="btn">+ Solicitar Crédito</button>
               </div>
-            ) : credits.map(c => {
+            ) : credits.map(c=>{
               const st = CREDIT_STATUS[c.status]||CREDIT_STATUS.PENDIENTE;
-              const progress = c.total_cuotas>0 ? ((c.cuotas_pagadas/c.total_cuotas)*100).toFixed(0) : 0;
+              const progress = c.total_cuotas>0?((c.cuotas_pagadas/c.total_cuotas)*100).toFixed(0):0;
               return (
                 <div key={c.id} className="card" style={{ border:`2px solid ${st.color}20` }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16 }}>
@@ -245,35 +255,28 @@ if (productAmount) {
                       <div style={{ fontSize:12, color:'#64748b', marginTop:2 }}>
                         {c.installments} cuotas · {fmt(c.monthly_payment)}/mes · {c.interest_rate}% mensual
                       </div>
+                      {c.product_name && (
+                        <div style={{ fontSize:12, color:'#2563eb', marginTop:4, fontWeight:600 }}>
+                          📦 {c.product_name}
+                        </div>
+                      )}
                     </div>
-                    <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:6 }}>
-                      <span style={{ background:st.bg, color:st.color, padding:'4px 12px', borderRadius:20, fontSize:12, fontWeight:700 }}>{st.label}</span>
-                      {c.blocked && <span style={{ background:'#fef2f2', color:'#dc2626', padding:'2px 10px', borderRadius:20, fontSize:11, fontWeight:700 }}>🚫 Bloqueado</span>}
-                    </div>
+                    <span style={{ background:st.bg, color:st.color, padding:'4px 12px', borderRadius:20, fontSize:12, fontWeight:700 }}>{st.label}</span>
                   </div>
                   {c.status==='ACTIVO' && (
                     <>
-                      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12, marginBottom:16 }}>
-                        {[['Total',fmt(c.total_with_interest||c.amount),'#7c3aed'],['Pagadas',`${c.cuotas_pagadas}/${c.total_cuotas}`,'#15803d'],['Vencidas',c.cuotas_vencidas,'#dc2626'],['Score ⭐',c.good_payer_score||0,'#f59e0b']].map(([l,v,col])=>(
+                      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12, marginBottom:12 }}>
+                        {[['Total',fmt(c.total_with_interest||c.amount),'#7c3aed'],['Pagadas',`${c.cuotas_pagadas}/${c.total_cuotas}`,'#15803d'],['Vencidas',c.cuotas_vencidas||0,'#dc2626'],['Score ⭐',c.good_payer_score||0,'#f59e0b']].map(([l,v,col])=>(
                           <div key={l} style={{ background:'#f8fafc', borderRadius:10, padding:'10px 14px' }}>
                             <div style={{ fontSize:10, color:'#64748b', textTransform:'uppercase', fontWeight:700 }}>{l}</div>
                             <div style={{ fontSize:18, fontWeight:800, color:col, marginTop:2 }}>{v}</div>
                           </div>
                         ))}
                       </div>
-                      <div style={{ marginBottom:8 }}>
-                        <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:'#64748b', marginBottom:4 }}>
-                          <span>Progreso de pago</span><span>{progress}%</span>
-                        </div>
-                        <div style={{ background:'#e5e7eb', borderRadius:4, height:8 }}>
-                          <div style={{ width:`${progress}%`, background:'linear-gradient(90deg,#2563eb,#22c55e)', height:'100%', borderRadius:4, transition:'width 0.5s' }}/>
-                        </div>
+                      <div style={{ background:'#e5e7eb', borderRadius:4, height:8, marginBottom:8 }}>
+                        <div style={{ width:`${progress}%`, background:'linear-gradient(90deg,#2563eb,#22c55e)', height:'100%', borderRadius:4 }}/>
                       </div>
-                      {c.penalty_amount>0 && (
-                        <div style={{ background:'#fef2f2', border:'1px solid #fca5a5', borderRadius:10, padding:'10px 14px', marginTop:12, fontSize:13, color:'#dc2626' }}>
-                          ⚠️ Penalidad acumulada: <strong>{fmt(c.penalty_amount)}</strong>
-                        </div>
-                      )}
+                      <div style={{ fontSize:11, color:'#64748b', marginBottom:8 }}>{progress}% completado</div>
                     </>
                   )}
                   {c.status==='PENDIENTE' && (
@@ -287,7 +290,7 @@ if (productAmount) {
           </div>
         )}
 
-        {/* TAB: Cuotas */}
+        {/* TAB Cuotas */}
         {tab==='cuotas' && (
           <div className="card">
             <h3 style={{ margin:'0 0 16px', fontSize:15, fontWeight:800, color:'#0D3B87' }}>📅 Tabla de Amortización</h3>
@@ -297,35 +300,33 @@ if (productAmount) {
               <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
                 <thead>
                   <tr style={{ borderBottom:'2px solid #f1f5f9' }}>
-                    {['#','Vencimiento','Capital','Interés','Penalidad','Total','Pagado','Estado','Acción'].map(h=>(
+                    {['#','Vencimiento','Capital','Interés','Penalidad','Total','Estado','Acción'].map(h=>(
                       <th key={h} style={{ padding:'10px 12px', textAlign:'left', fontSize:11, color:'#64748b', fontWeight:700, textTransform:'uppercase' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {installments.map(inst => {
+                  {installments.map(inst=>{
                     const st = STATUS_COLOR[inst.status]||STATUS_COLOR.PENDIENTE;
-                    const isOverdue = inst.status==='VENCIDA';
                     const totalDue = parseFloat(inst.amount)+parseFloat(inst.penalty||0);
                     return (
-                      <tr key={inst.id} style={{ borderBottom:'1px solid #f1f5f9', background:isOverdue?'#fff5f5':'white' }}>
-                        <td style={{ padding:'10px 12px', fontWeight:700, color:'#0D3B87' }}>#{inst.installment_num}</td>
-                        <td style={{ padding:'10px 12px', color:isOverdue?'#dc2626':'#374151', fontWeight:isOverdue?700:400 }}>
+                      <tr key={inst.id} style={{ borderBottom:'1px solid #f1f5f9', background:inst.status==='VENCIDA'?'#fff5f5':'white' }}>
+                        <td style={{ padding:'10px 12px', fontWeight:700 }}>#{inst.installment_num}</td>
+                        <td style={{ padding:'10px 12px', color:inst.status==='VENCIDA'?'#dc2626':'#374151' }}>
                           {new Date(inst.due_date).toLocaleDateString('es-PE')}
-                          {isOverdue && <div style={{ fontSize:10, color:'#dc2626' }}>{inst.days_overdue} días vencida</div>}
+                          {inst.days_overdue>0 && <div style={{ fontSize:10, color:'#dc2626' }}>{inst.days_overdue} días vencida</div>}
                         </td>
                         <td style={{ padding:'10px 12px' }}>{fmt(inst.principal)}</td>
                         <td style={{ padding:'10px 12px', color:'#f59e0b' }}>{fmt(inst.interest)}</td>
                         <td style={{ padding:'10px 12px', color:'#dc2626' }}>{fmt(inst.penalty)}</td>
                         <td style={{ padding:'10px 12px', fontWeight:800 }}>{fmt(totalDue)}</td>
-                        <td style={{ padding:'10px 12px', color:'#15803d' }}>{fmt(inst.paid_amount)}</td>
                         <td style={{ padding:'10px 12px' }}>
                           <span style={{ background:st.bg, color:st.color, padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:700 }}>{st.label}</span>
                         </td>
                         <td style={{ padding:'10px 12px' }}>
                           {inst.status!=='PAGADA' && (
                             paying?.id===inst.id ? (
-                              <div style={{ display:'flex', flexDirection:'column', gap:6, minWidth:200 }}>
+                              <div style={{ display:'flex', flexDirection:'column', gap:6, minWidth:180 }}>
                                 <input type="number" placeholder={`S/ ${totalDue.toFixed(2)}`} value={payForm.amount}
                                   onChange={e=>setPayForm(p=>({...p,amount:e.target.value}))}
                                   style={{ padding:'6px 10px', borderRadius:8, border:'1.5px solid #e5e7eb', fontSize:12 }}/>
@@ -336,14 +337,17 @@ if (productAmount) {
                                   <option value="YAPE">Yape</option>
                                   <option value="PLIN">Plin</option>
                                 </select>
-                                <input placeholder="Código de referencia" value={payForm.reference_code}
+                                <input placeholder="Referencia" value={payForm.reference_code}
                                   onChange={e=>setPayForm(p=>({...p,reference_code:e.target.value}))}
                                   style={{ padding:'6px 10px', borderRadius:8, border:'1.5px solid #e5e7eb', fontSize:12 }}/>
                                 <div style={{ display:'flex', gap:4 }}>
-                                  <button onClick={()=>payInstallment(inst.credit_id, inst.id)} className="btn btn-green" disabled={sending||!payForm.amount} style={{ flex:1, padding:'6px', fontSize:11 }}>
+                                  <button onClick={()=>payInstallment(inst.credit_id, inst.id)}
+                                    className="btn btn-green" disabled={sending||!payForm.amount}
+                                    style={{ flex:1, padding:'6px', fontSize:11 }}>
                                     {sending?'...':'✓ Pagar'}
                                   </button>
-                                  <button onClick={()=>setPaying(null)} style={{ padding:'6px 10px', borderRadius:8, border:'1px solid #e5e7eb', background:'white', cursor:'pointer', fontSize:11 }}>✕</button>
+                                  <button onClick={()=>setPaying(null)}
+                                    style={{ padding:'6px 10px', borderRadius:8, border:'1px solid #e5e7eb', background:'white', cursor:'pointer', fontSize:11 }}>✕</button>
                                 </div>
                               </div>
                             ) : (
@@ -362,7 +366,7 @@ if (productAmount) {
           </div>
         )}
 
-        {/* TAB: Beneficios */}
+        {/* TAB Beneficios */}
         {tab==='beneficios' && (
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))', gap:16 }}>
             {benefits.length===0 ? (
@@ -371,13 +375,13 @@ if (productAmount) {
                 <div style={{ fontSize:16, fontWeight:700, color:'#0D3B87', marginBottom:8 }}>Sin beneficios aún</div>
                 <div style={{ color:'#64748b' }}>Paga tus cuotas a tiempo para ganar descuentos y mejores tasas</div>
               </div>
-            ) : benefits.map(b => (
-              <div key={b.id} className="card" style={{ border:`2px solid ${b.used?'#e5e7eb':b.benefit_type==='DESCUENTO'?'#22c55e':b.benefit_type==='MEJOR_TASA'?'#3b82f6':'#f59e0b'}30` }}>
+            ) : benefits.map(b=>(
+              <div key={b.id} className="card">
                 <div style={{ fontSize:32, marginBottom:8 }}>
                   {b.benefit_type==='DESCUENTO'?'🎁':b.benefit_type==='MEJOR_TASA'?'📉':'⭐'}
                 </div>
                 <div style={{ fontWeight:800, fontSize:14, color:'#0D3B87' }}>{b.description}</div>
-                {b.benefit_value>0 && <div style={{ fontSize:22, fontWeight:900, color:'#15803d', marginTop:4 }}>{b.benefit_value}% {b.benefit_type==='DESCUENTO'?'descuento':'menos'}</div>}
+                {b.benefit_value>0 && <div style={{ fontSize:22, fontWeight:900, color:'#15803d', marginTop:4 }}>{b.benefit_value}%</div>}
                 {b.expires_at && <div style={{ fontSize:11, color:'#64748b', marginTop:6 }}>Vence: {new Date(b.expires_at).toLocaleDateString('es-PE')}</div>}
                 <div style={{ marginTop:8 }}>
                   <span style={{ background:b.used?'#f1f5f9':'#f0fdf4', color:b.used?'#64748b':'#15803d', padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:700 }}>
