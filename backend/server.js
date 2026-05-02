@@ -381,20 +381,45 @@ app.get('/api/buyer/credits', auth, async (req, res) => {
 
 app.post('/api/buyer/credits/request', auth, async (req, res) => {
   try {
-    const { amount, installments } = req.body;
-    const monthly = (parseFloat(amount) / parseInt(installments)).toFixed(2);
-    const r = await pool.query(
-      `INSERT INTO buyer_credits(buyer_id,amount,installments,monthly_payment,status) VALUES($1,$2,$3,$4,'PENDIENTE') RETURNING *`,
-      [req.user.id, amount, installments, monthly]
+    const { amount, installments, notes, product_id, product_name, product_price } = req.body;
+    if (!amount || !installments) return res.status(400).json({ error: 'Monto y cuotas requeridos' });
+
+    const rate    = await getCreditRate(parseInt(installments));
+    const r       = parseFloat(rate) / 100;
+    const n       = parseInt(installments);
+    const A       = parseFloat(amount);
+    const payment = r === 0 ? A / n : (A * r * Math.pow(1+r,n)) / (Math.pow(1+r,n)-1);
+    const totalWithI = payment * n;
+
+    const credit = await pool.query(
+      `INSERT INTO buyer_credits(buyer_id,amount,installments,monthly_payment,interest_rate,
+        total_with_interest,status,notes,product_id,product_name,product_price)
+       VALUES($1,$2,$3,$4,$5,$6,'PENDIENTE',$7,$8,$9,$10) RETURNING *`,
+      [req.user.id, A, n, payment.toFixed(2), rate, totalWithI.toFixed(2),
+       notes||null, product_id||null, product_name||null, product_price||null]
     );
+
     const admins = await pool.query("SELECT id FROM users WHERE role='ADMIN'");
-    const u = await pool.query('SELECT name FROM users WHERE id=$1', [req.user.id]);
+    const u      = await pool.query('SELECT name FROM users WHERE id=$1', [req.user.id]);
+    const productInfo = product_name ? ` para "${product_name}"` : '';
+
     for (const a of admins.rows) {
-      await notify(a.id, 'SOLICITUD_CREDITO', 'Nueva solicitud de crédito',
-        `${u.rows[0].name} solicita crédito de S/ ${amount} en ${installments} cuotas`, '/admin/credits');
+      await notify(a.id, 'SOLICITUD_CREDITO', '💳 Nueva solicitud de crédito',
+        `${u.rows[0].name} solicita S/ ${A} en ${n} cuotas (${rate}% mensual)${productInfo}`,
+        '/admin/credits');
     }
-    res.json(r.rows[0]);
-  } catch(e) { console.error('[credit req]', e.message); res.status(500).json({ error: 'Error interno' }); }
+
+    res.json({
+      ok: true,
+      credit: credit.rows[0],
+      monthly_payment: payment.toFixed(2),
+      interest_rate: rate,
+      total: totalWithI.toFixed(2)
+    });
+  } catch(e) {
+    console.error('[credit request]', e.message);
+    res.status(500).json({ error: 'Error interno' });
+  }
 });
 
 app.get('/api/admin/credits', auth, role('ADMIN'), async (req, res) => {
