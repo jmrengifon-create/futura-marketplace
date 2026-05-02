@@ -36,7 +36,14 @@ export default function BuyerCredits() {
     if (!token) { window.location.href='/login'; return; }
     loadAll();
   }, []);
-
+  const params = new URLSearchParams(window.location.search);
+const productAmount = params.get('amount');
+const productName   = params.get('name');
+if (productAmount) {
+  setForm(prev => ({ ...prev, amount: productAmount }));
+  setShowForm(true);
+  setMsg(`💳 Financiando: ${productName || 'producto seleccionado'}`);
+}
   const loadAll = async () => {
     setLoading(true);
     try {
