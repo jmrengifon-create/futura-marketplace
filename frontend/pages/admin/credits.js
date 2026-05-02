@@ -216,10 +216,24 @@ export default function AdminCredits() {
                               {sem.icon}
                             </div>
                           </td>
-                          <td style={{ padding:'12px 14px' }}>
-                            <div style={{ fontWeight:700 }}>{c.buyer_name}</div>
-                            <div style={{ fontSize:11, color:'#64748b' }}>{c.buyer_email}</div>
-                          </td>
+                         <td style={{ padding:'12px 14px' }}>
+  <div style={{ fontWeight:700 }}>{c.buyer_name}</div>
+  <div style={{ fontSize:11, color:'#64748b' }}>{c.buyer_email}</div>
+</td>
+<td style={{ padding:'12px 14px' }}>
+  {c.product_name ? (
+    <div>
+      <div style={{ fontSize:12, fontWeight:700, color:'#0D3B87', maxWidth:160, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+        {c.product_name}
+      </div>
+      <div style={{ fontSize:11, color:'#15803d', fontWeight:600 }}>
+        S/ {parseFloat(c.product_price||0).toFixed(0)}
+      </div>
+    </div>
+  ) : (
+    <span style={{ color:'#94a3b8', fontSize:12 }}>Sin producto</span>
+  )}
+</td>
                           <td style={{ padding:'12px 14px', fontWeight:800, color:'#0D3B87' }}>{fmt(c.amount)}</td>
                           <td style={{ padding:'12px 14px' }}>{fmt(c.monthly_payment)}</td>
                           <td style={{ padding:'12px 14px', textAlign:'center' }}>
