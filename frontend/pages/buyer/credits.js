@@ -18,6 +18,8 @@ const CREDIT_STATUS = {
 };
 
 export default function BuyerCredits() {
+if (typeof window === 'undefined') return null;
+  const [credits, setCredits] = useState([]); 
   const [credits, setCredits]           = useState([]);
   const [installments, setInstallments] = useState([]);
   const [benefits, setBenefits]         = useState([]);
