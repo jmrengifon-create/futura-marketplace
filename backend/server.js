@@ -169,13 +169,6 @@ app.post('/api/admin/inventory', auth, role('ADMIN'), async (req, res) => {
     res.json(r.rows[0]);
   } catch(e) { console.error('[inventory POST]', e.message); res.status(500).json({ error: 'Error interno' }); }
 });
-       VALUES($1,$2,$3,$4,$5,$6,$7,'PROGRAMADO') RETURNING *`,
-      [req.user.id, adminName, title, content, media_url || null, platforms || ['FACEBOOK'], scheduled_at || null]
-    );
-    res.json(r.rows[0]);
-  } catch(e) { console.error('[inventory POST]', e.message); res.status(500).json({ error: 'Error interno' }); }
-});
-
 app.put('/api/admin/inventory/:id', auth, role('ADMIN'), async (req, res) => {
   try {
     const { quantity, min_quantity, unit_cost, unit_price, status } = req.body;
