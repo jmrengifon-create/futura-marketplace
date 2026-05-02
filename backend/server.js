@@ -1439,7 +1439,7 @@ app.post('/api/admin/credits/check-overdue', auth, role('ADMIN'), async (req, re
 });
 
 // ── ADMIN: ver tasas de interés ───────────────────────────
-app.get('/api/admin/credit-rates', auth, role('ADMIN'), async (req, res) => {
+app.get('/api/admin/credit-rates', auth, async (req, res) => {
   try {
     const r = await pool.query('SELECT * FROM credit_rates ORDER BY min_installments');
     res.json(r.rows);
