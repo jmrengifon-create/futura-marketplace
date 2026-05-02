@@ -308,15 +308,24 @@ export default function Home() {
                     <span style={{ width: 18, height: 18, background: '#D0E8F5', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9 }}>👤</span>
                     {p.seller_name}
                   </p>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3 }}>Precio</div>
-                      <div style={{ fontSize: 20, fontWeight: 900, color: '#0D3B87', letterSpacing: '-0.5px' }}>S/ {parseFloat(p.price).toLocaleString()}</div>
-                    </div>
-                    <Link href={`/product/${p.id}`} style={{ background: 'linear-gradient(135deg, #3B75C0, #6FA8D4)', color: 'white', textDecoration: 'none', padding: '9px 16px', borderRadius: 10, fontSize: 12, fontWeight: 700, boxShadow: '0 3px 10px rgba(59,130,246,0.3)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                      Ver →
-                    </Link>
-                  </div>
+                  <div>
+  <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3 }}>Precio</div>
+  <div style={{ fontSize: 20, fontWeight: 900, color: '#0D3B87', letterSpacing: '-0.5px' }}>S/ {parseFloat(p.price).toLocaleString()}</div>
+  <div style={{ fontSize: 10, color: '#15803d', fontWeight: 600, marginTop: 2 }}>
+    💳 Desde S/ {(parseFloat(p.price)/6).toFixed(0)}/mes con crédito
+  </div>
+</div>
+<div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+  <Link href={`/product/${p.id}`} style={{ background: 'linear-gradient(135deg, #3B75C0, #6FA8D4)', color: 'white', textDecoration: 'none', padding: '9px 16px', borderRadius: 10, fontSize: 12, fontWeight: 700, boxShadow: '0 3px 10px rgba(59,130,246,0.3)', display: 'flex', alignItems: 'center', gap: 4 }}>
+    Ver →
+  </Link>
+  {role === 'COMPRADOR' && (
+    <a href={`/buyer/credits?product=${p.id}&amount=${p.price}&name=${encodeURIComponent(p.title)}`}
+      style={{ background: 'linear-gradient(135deg,#15803d,#22c55e)', color: 'white', textDecoration: 'none', padding: '6px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, textAlign: 'center' }}>
+      💳 Financiar
+    </a>
+  )}
+</div>
                 </div>
               </div>
             ))}
