@@ -118,6 +118,12 @@ export default function Home() {
                     </a>
                   </>
                 )}
+{role === 'COMPRADOR' && (
+  <a href="/buyer/dashboard" className="nav-a" style={{ color: '#94a3b8', textDecoration: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+    <span style={{ fontSize: 22 }}>💳</span>
+    <span style={{ fontSize: 10, color: '#64748b' }}>Mi Panel</span>
+  </a>
+)}   
                 <a href="/my-orders" className="nav-a" style={{ color: '#94a3b8', textDecoration: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                   <span style={{ fontSize: 22 }}>📦</span>
                   <span style={{ fontSize: 10, color: '#64748b' }}>Mis Pedidos</span>
