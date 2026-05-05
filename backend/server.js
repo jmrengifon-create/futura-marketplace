@@ -386,29 +386,6 @@ app.get('/api/locations', async (req, res) => {
 });
 
 app.get('/api/test-db', async (req, res) => {
-  app.get('/api/fix-db', async (req, res) => {
-  try {
-    // Limpiar locales duplicados - dejar solo los 4 correctos
-    const locs = await pool.query('SELECT id, name FROM locations ORDER BY id');
-    
-    // Arreglar tabla inventory_movements para que acepte la columna correcta
-    await pool.query(`
-      ALTER TABLE inventory_movements 
-      ADD COLUMN IF NOT EXISTS inventory_id INTEGER,
-      ADD COLUMN IF NOT EXISTS registered_by INTEGER,
-      ADD COLUMN IF NOT EXISTS quantity_before INTEGER,
-      ADD COLUMN IF NOT EXISTS quantity_after INTEGER
-    `).catch(e => console.log('cols exist'));
-
-    res.json({ 
-      ok: true, 
-      locations: locs.rows,
-      message: 'DB fixed'
-    });
-  } catch(e) {
-    res.status(500).json({ error: e.message });
-  }
-});
   try {
     const r = await pool.query('SELECT COUNT(*) FROM locations');
     res.json({ ok: true, count: r.rows[0].count });
