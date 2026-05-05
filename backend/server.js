@@ -1375,4 +1375,273 @@ app.get('/api/buyer/credits/benefits', auth, async (req, res) => {
     res.json(r.rows);
   } catch(e) { res.status(500).json({ error: 'Error interno' }); }
 });
+// ═══════════════════════════════════════════════════════════
+// 1. ALERTAS DE STOCK BAJO
+// ═══════════════════════════════════════════════════════════
+
+// Ver items con stock bajo (quantity <= min_quantity)
+app.get('/api/admin/inventory/alerts', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT i.*, l.name AS location_name, l.city,
+        CASE
+          WHEN i.quantity = 0 THEN 'SIN_STOCK'
+          WHEN i.quantity <= i.min_quantity THEN 'STOCK_BAJO'
+          WHEN i.quantity <= i.min_quantity * 1.5 THEN 'STOCK_CRITICO'
+          ELSE 'OK'
+        END AS alert_level
+      FROM inventory i
+      JOIN locations l ON l.id = i.location_id
+      WHERE i.quantity <= i.min_quantity * 1.5
+      ORDER BY i.quantity ASC, l.name ASC
+    `);
+    // Notificar a admins si hay items sin stock
+    const sinStock = r.rows.filter(i => i.quantity === 0);
+    for (const item of sinStock) {
+      await notify(
+        null, 'STOCK_AGOTADO', `⛔ Sin stock: ${item.item_name}`,
+        `${item.item_name} en ${item.location_name} está sin stock`,
+        '/admin/inventory'
+      ).catch(() => {});
+    }
+    res.json({
+      alerts: r.rows,
+      summary: {
+        sin_stock: r.rows.filter(i => i.alert_level === 'SIN_STOCK').length,
+        stock_bajo: r.rows.filter(i => i.alert_level === 'STOCK_BAJO').length,
+        stock_critico: r.rows.filter(i => i.alert_level === 'STOCK_CRITICO').length,
+      }
+    });
+  } catch(e) { console.error('[stock alerts]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Trigger de alerta al registrar movimiento de salida
+app.post('/api/admin/inventory/:id/check-stock', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const item = await pool.query(`
+      SELECT i.*, l.name AS location_name FROM inventory i
+      JOIN locations l ON l.id = i.location_id WHERE i.id=$1`, [req.params.id]);
+    if (!item.rows.length) return res.status(404).json({ error: 'Item no encontrado' });
+    const i = item.rows[0];
+    let alert = null;
+    if (i.quantity === 0) {
+      alert = { level: 'SIN_STOCK', message: `⛔ ${i.item_name} en ${i.location_name} sin stock` };
+      const admins = await pool.query("SELECT id FROM users WHERE role='ADMIN'");
+      for (const a of admins.rows) {
+        await notify(a.id, 'STOCK_AGOTADO', `⛔ Sin stock: ${i.item_name}`,
+          `${i.item_name} en ${i.location_name} llegó a 0 unidades`, '/admin/inventory');
+      }
+    } else if (i.quantity <= i.min_quantity) {
+      alert = { level: 'STOCK_BAJO', message: `⚠️ ${i.item_name} en ${i.location_name}: solo ${i.quantity} unidades` };
+      const admins = await pool.query("SELECT id FROM users WHERE role='ADMIN'");
+      for (const a of admins.rows) {
+        await notify(a.id, 'STOCK_BAJO', `⚠️ Stock bajo: ${i.item_name}`,
+          `${i.item_name} en ${i.location_name}: ${i.quantity} unidades (mín: ${i.min_quantity})`, '/admin/inventory');
+      }
+    }
+    res.json({ ok: true, quantity: i.quantity, min_quantity: i.min_quantity, alert });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// ═══════════════════════════════════════════════════════════
+// 2. FLUJO DE DINERO POR SEDE
+// ═══════════════════════════════════════════════════════════
+
+app.get('/api/admin/locations/cash-flow', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const { start_date, end_date } = req.query;
+    const dateFilter = start_date && end_date
+      ? `AND o.created_at BETWEEN '${start_date}' AND '${end_date}'`
+      : `AND o.created_at >= NOW() - INTERVAL '30 days'`;
+
+    // Flujo por sede (basado en location de vendedores)
+    const byLocation = await pool.query(`
+      SELECT
+        l.id, l.name AS sede, l.city,
+        COUNT(DISTINCT o.id) AS total_ordenes,
+        COALESCE(SUM(i.price), 0) AS revenue_total,
+        COALESCE(SUM(i.commission), 0) AS comision_futura,
+        COALESCE(SUM(i.net), 0) AS neto_vendedores,
+        COUNT(DISTINCT i.seller_id) AS vendedores_activos
+      FROM locations l
+      LEFT JOIN seller_profiles sp ON sp.location_city = l.city
+      LEFT JOIN order_items i ON i.seller_id = sp.user_id
+      LEFT JOIN orders o ON o.id = i.order_id
+        AND o.status IN ('PAGADA','EN_PRODUCCION','LISTO','ENVIADA','ENTREGADA')
+        ${dateFilter}
+      WHERE l.active = TRUE
+      GROUP BY l.id, l.name, l.city
+      ORDER BY revenue_total DESC
+    `);
+
+    // Inventario valorizado por sede
+    const inventoryByLocation = await pool.query(`
+      SELECT
+        l.id, l.name AS sede,
+        COUNT(i.id) AS items,
+        COALESCE(SUM(i.quantity), 0) AS stock_total,
+        COALESCE(SUM(i.quantity * i.unit_cost), 0) AS valor_inventario,
+        COALESCE(SUM(i.quantity * i.unit_price), 0) AS valor_venta_potencial,
+        COUNT(CASE WHEN i.quantity <= i.min_quantity THEN 1 END) AS items_bajo_stock
+      FROM locations l
+      LEFT JOIN inventory i ON i.location_id = l.id
+      WHERE l.active = TRUE
+      GROUP BY l.id, l.name
+      ORDER BY valor_inventario DESC
+    `);
+
+    // Movimientos de inventario por sede (últimos 30 días)
+    const movements = await pool.query(`
+      SELECT
+        l.name AS sede,
+        im.movement_type,
+        COUNT(*) AS cantidad_movimientos,
+        SUM(im.quantity) AS unidades_movidas
+      FROM inventory_movements im
+      JOIN inventory inv ON inv.id = im.inventory_id
+      JOIN locations l ON l.id = inv.location_id
+      WHERE im.created_at >= NOW() - INTERVAL '30 days'
+      GROUP BY l.name, im.movement_type
+      ORDER BY l.name, im.movement_type
+    `).catch(() => ({ rows: [] }));
+
+    res.json({
+      cash_flow: byLocation.rows,
+      inventory: inventoryByLocation.rows,
+      movements: movements.rows,
+      period: start_date ? `${start_date} - ${end_date}` : 'Últimos 30 días'
+    });
+  } catch(e) { console.error('[cash flow]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+// ═══════════════════════════════════════════════════════════
+// 3. REPORTE DIARIO AUTOMÁTICO
+// ═══════════════════════════════════════════════════════════
+
+// Generar reporte diario (llamar desde un cron o manualmente)
+app.post('/api/admin/reports/daily', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+
+    const [ventas, stockAlertas, tecnicos, creditos] = await Promise.all([
+      // Ventas del día
+      pool.query(`
+        SELECT COUNT(*) AS ordenes, COALESCE(SUM(total),0) AS revenue
+        FROM orders
+        WHERE DATE(created_at) = CURRENT_DATE
+        AND status IN ('PAGADA','EN_PRODUCCION','LISTO','ENVIADA','ENTREGADA')
+      `),
+      // Items con stock bajo
+      pool.query(`
+        SELECT COUNT(*) AS count FROM inventory
+        WHERE quantity <= min_quantity
+      `),
+      // Técnicos trabajando
+      pool.query(`
+        SELECT COUNT(*) AS trabajando FROM technicians
+        WHERE status = 'TRABAJANDO' AND active = TRUE
+      `),
+      // Créditos pendientes
+      pool.query(`
+        SELECT COUNT(*) AS pendientes FROM buyer_credits
+        WHERE status = 'PENDIENTE'
+      `).catch(() => ({ rows: [{ pendientes: 0 }] })),
+    ]);
+
+    const reporte = {
+      fecha: today,
+      ventas: {
+        ordenes_hoy: parseInt(ventas.rows[0].ordenes),
+        revenue_hoy: parseFloat(ventas.rows[0].revenue),
+      },
+      inventario: {
+        items_stock_bajo: parseInt(stockAlertas.rows[0].count),
+      },
+      operaciones: {
+        tecnicos_trabajando: parseInt(tecnicos.rows[0].trabajando),
+        creditos_pendientes: parseInt(creditos.rows[0].pendientes),
+      }
+    };
+
+    // Notificar a todos los admins
+    const admins = await pool.query("SELECT id FROM users WHERE role='ADMIN'");
+    const resumen = `📊 ${today} | Ventas: S/ ${reporte.ventas.revenue_hoy.toFixed(2)} | Stock bajo: ${reporte.inventario.items_stock_bajo} items | Técnicos activos: ${reporte.operaciones.tecnicos_trabajando}`;
+
+    for (const a of admins.rows) {
+      await notify(a.id, 'REPORTE_DIARIO', '📊 Reporte diario Futura', resumen, '/admin/dashboard');
+    }
+
+    // Guardar reporte en DB
+    await pool.query(
+      `INSERT INTO daily_reports(fecha, data) VALUES($1, $2)
+       ON CONFLICT(fecha) DO UPDATE SET data=$2, updated_at=NOW()`,
+      [today, JSON.stringify(reporte)]
+    ).catch(() => {}); // Si la tabla no existe, continúa
+
+    res.json({ ok: true, reporte });
+  } catch(e) { console.error('[daily report]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Ver historial de reportes
+app.get('/api/admin/reports/history', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const r = await pool.query(
+      'SELECT * FROM daily_reports ORDER BY fecha DESC LIMIT 30'
+    ).catch(() => ({ rows: [] }));
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// ═══════════════════════════════════════════════════════════
+// 4. PREDICCIÓN DE INVENTARIO (SIMPLE)
+// ═══════════════════════════════════════════════════════════
+
+app.get('/api/admin/inventory/prediction', auth, role('ADMIN'), async (req, res) => {
+  try {
+    // Calcular tasa de consumo promedio por item (últimos 30 días)
+    const movements = await pool.query(`
+      SELECT
+        im.inventory_id,
+        i.item_name,
+        i.quantity AS stock_actual,
+        i.min_quantity,
+        l.name AS sede,
+        COALESCE(SUM(CASE WHEN im.movement_type='SALIDA' THEN im.quantity ELSE 0 END), 0) AS salidas_30d,
+        COALESCE(SUM(CASE WHEN im.movement_type='ENTRADA' THEN im.quantity ELSE 0 END), 0) AS entradas_30d
+      FROM inventory i
+      JOIN locations l ON l.id = i.location_id
+      LEFT JOIN inventory_movements im ON im.inventory_id = i.id
+        AND im.created_at >= NOW() - INTERVAL '30 days'
+      WHERE l.active = TRUE
+      GROUP BY im.inventory_id, i.item_name, i.quantity, i.min_quantity, l.name, i.id
+      ORDER BY salidas_30d DESC
+    `);
+
+    const predictions = movements.rows.map(item => {
+      const dailyConsumption = parseFloat(item.salidas_30d) / 30;
+      const daysUntilEmpty = dailyConsumption > 0
+        ? Math.floor(parseFloat(item.stock_actual) / dailyConsumption)
+        : 999;
+      const daysUntilMin = dailyConsumption > 0
+        ? Math.floor((parseFloat(item.stock_actual) - parseFloat(item.min_quantity)) / dailyConsumption)
+        : 999;
+      const suggestedOrder = Math.max(0, Math.ceil(dailyConsumption * 30) - parseFloat(item.stock_actual));
+
+      return {
+        ...item,
+        consumo_diario: dailyConsumption.toFixed(2),
+        dias_hasta_vacio: daysUntilEmpty,
+        dias_hasta_minimo: Math.max(0, daysUntilMin),
+        pedido_sugerido: suggestedOrder,
+        urgencia: daysUntilEmpty <= 7 ? 'URGENTE' : daysUntilEmpty <= 15 ? 'PRONTO' : 'OK'
+      };
+    });
+
+    res.json({
+      predictions,
+      urgentes: predictions.filter(p => p.urgencia === 'URGENTE').length,
+      pronto: predictions.filter(p => p.urgencia === 'PRONTO').length,
+    });
+  } catch(e) { console.error('[prediction]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
 app.listen(3001, () => console.log('✅ Backend Futura v5.0 activo en puerto 3001'));
