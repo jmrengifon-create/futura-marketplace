@@ -1644,4 +1644,271 @@ app.get('/api/admin/inventory/prediction', auth, role('ADMIN'), async (req, res)
     });
   } catch(e) { console.error('[prediction]', e.message); res.status(500).json({ error: 'Error interno' }); }
 });
+// ═══════════════════════════════════════════════════════════
+// INVENTARIO INTELIGENTE MULTI-SEDE
+// ═══════════════════════════════════════════════════════════
+
+// ── Alertas de stock bajo ─────────────────────────────────
+const checkStockAlerts = async () => {
+  try {
+    const lowStock = await pool.query(`
+      SELECT i.*, l.name AS location_name
+      FROM inventory i
+      JOIN locations l ON l.id = i.location_id
+      WHERE i.quantity <= i.min_quantity AND i.active = TRUE
+    `);
+    for (const item of lowStock.rows) {
+      const existing = await pool.query(
+        `SELECT id FROM inventory_alerts 
+         WHERE inventory_id=$1 AND resolved=FALSE AND alert_type='STOCK_BAJO'`,
+        [item.id]
+      );
+      if (!existing.rows.length) {
+        await pool.query(
+          `INSERT INTO inventory_alerts(location_id,inventory_id,alert_type,message)
+           VALUES($1,$2,'STOCK_BAJO',$3)`,
+          [item.location_id, item.id, `Stock bajo: ${item.item_name} en ${item.location_name} (${item.quantity}/${item.min_quantity})`]
+        );
+        const admins = await pool.query("SELECT id FROM users WHERE role='ADMIN'");
+        for (const a of admins.rows) {
+          await notify(a.id, 'STOCK_BAJO', '⚠️ Stock bajo detectado',
+            `${item.item_name} en ${item.location_name}: ${item.quantity} unidades (mín: ${item.min_quantity})`,
+            '/admin/inventory');
+        }
+      }
+    }
+    console.log(`[Inventory] ${lowStock.rows.length} items con stock bajo verificados`);
+  } catch(e) { console.error('[checkStockAlerts]', e.message); }
+};
+
+// ── Predicción de inventario ──────────────────────────────
+const updatePredictions = async () => {
+  try {
+    const items = await pool.query('SELECT id FROM inventory WHERE active=TRUE');
+    for (const item of items.rows) {
+      const movements = await pool.query(`
+        SELECT COALESCE(SUM(quantity),0) AS total_out
+        FROM inventory_movements
+        WHERE inventory_id=$1 AND movement_type='SALIDA'
+        AND created_at >= NOW() - INTERVAL '30 days'`,
+        [item.id]
+      );
+      const totalOut = parseFloat(movements.rows[0].total_out) || 0;
+      const avgDaily = totalOut / 30;
+      const stock    = await pool.query('SELECT quantity FROM inventory WHERE id=$1', [item.id]);
+      const qty      = parseInt(stock.rows[0].quantity) || 0;
+      const daysLeft = avgDaily > 0 ? Math.floor(qty / avgDaily) : 999;
+
+      await pool.query(
+        `UPDATE inventory SET avg_daily_usage=$1, predicted_days_left=$2 WHERE id=$3`,
+        [avgDaily.toFixed(2), daysLeft, item.id]
+      );
+
+      // Alerta si quedan menos de 7 días
+      if (daysLeft < 7 && avgDaily > 0) {
+        const existing = await pool.query(
+          `SELECT id FROM inventory_alerts WHERE inventory_id=$1 AND alert_type='PREDICCION' AND resolved=FALSE`,
+          [item.id]
+        );
+        if (!existing.rows.length) {
+          const info = await pool.query('SELECT item_name, location_id FROM inventory WHERE id=$1', [item.id]);
+          await pool.query(
+            `INSERT INTO inventory_alerts(location_id,inventory_id,alert_type,message)
+             VALUES($1,$2,'PREDICCION',$3)`,
+            [info.rows[0].location_id, item.id,
+             `Se estima que ${info.rows[0].item_name} se agotará en ${daysLeft} días`]
+          );
+        }
+      }
+    }
+    console.log('[Inventory] Predicciones actualizadas');
+  } catch(e) { console.error('[updatePredictions]', e.message); }
+};
+
+// ── Reporte diario automático ─────────────────────────────
+const generateDailyReport = async () => {
+  try {
+    const locations = await pool.query('SELECT * FROM locations WHERE active=TRUE');
+    for (const loc of locations.rows) {
+      const stats = await pool.query(`
+        SELECT 
+          COUNT(*) AS total_items,
+          COALESCE(SUM(quantity),0) AS total_stock,
+          COUNT(CASE WHEN quantity <= min_quantity THEN 1 END) AS low_stock_items,
+          COALESCE(SUM(quantity * unit_cost),0) AS total_value
+        FROM inventory WHERE location_id=$1 AND active=TRUE`, [loc.id]);
+
+      const cash = await pool.query(`
+        SELECT
+          COALESCE(SUM(CASE WHEN type='INGRESO' THEN amount END),0) AS total_ingresos,
+          COALESCE(SUM(CASE WHEN type='EGRESO' THEN amount END),0) AS total_egresos
+        FROM inventory_cash_flow
+        WHERE location_id=$1 AND DATE(created_at)=CURRENT_DATE`, [loc.id]);
+
+      const s = stats.rows[0];
+      const c = cash.rows[0];
+
+      await pool.query(`
+        INSERT INTO inventory_daily_reports(location_id,report_date,total_items,total_stock,
+          low_stock_items,total_value,total_ingresos,total_egresos)
+        VALUES($1,CURRENT_DATE,$2,$3,$4,$5,$6,$7)
+        ON CONFLICT(location_id,report_date) DO UPDATE SET
+          total_items=$2,total_stock=$3,low_stock_items=$4,
+          total_value=$5,total_ingresos=$6,total_egresos=$7`,
+        [loc.id, s.total_items, s.total_stock, s.low_stock_items,
+         s.total_value, c.total_ingresos, c.total_egresos]
+      );
+    }
+    console.log('[Inventory] Reporte diario generado');
+  } catch(e) { console.error('[generateDailyReport]', e.message); }
+};
+
+// Ejecutar al iniciar y cada hora
+checkStockAlerts();
+updatePredictions();
+generateDailyReport();
+setInterval(checkStockAlerts, 60 * 60 * 1000);
+setInterval(updatePredictions, 60 * 60 * 1000);
+setInterval(generateDailyReport, 24 * 60 * 60 * 1000);
+
+// ── RUTAS ─────────────────────────────────────────────────
+
+// Flujo de dinero por sede
+app.get('/api/admin/inventory/cash-flow', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const { location_id, days = 30 } = req.query;
+    let sql = `
+      SELECT cf.*, l.name AS location_name, u.name AS registered_by_name
+      FROM inventory_cash_flow cf
+      JOIN locations l ON l.id = cf.location_id
+      LEFT JOIN users u ON u.id = cf.registered_by
+      WHERE cf.created_at >= NOW() - INTERVAL '${parseInt(days)} days'
+    `;
+    const params = [];
+    if (location_id) { sql += ' AND cf.location_id=$1'; params.push(location_id); }
+    sql += ' ORDER BY cf.created_at DESC';
+    const r = await pool.query(sql, params);
+
+    const summary = await pool.query(`
+      SELECT location_id, l.name AS location_name,
+        COALESCE(SUM(CASE WHEN type='INGRESO' THEN amount END),0) AS total_ingresos,
+        COALESCE(SUM(CASE WHEN type='EGRESO' THEN amount END),0) AS total_egresos,
+        COALESCE(SUM(CASE WHEN type='INGRESO' THEN amount ELSE -amount END),0) AS balance
+      FROM inventory_cash_flow cf
+      JOIN locations l ON l.id = cf.location_id
+      WHERE cf.created_at >= NOW() - INTERVAL '${parseInt(days)} days'
+      GROUP BY cf.location_id, l.name ORDER BY l.name`
+    );
+    res.json({ transactions: r.rows, summary: summary.rows });
+  } catch(e) { console.error('[cash-flow]', e.message); res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.post('/api/admin/inventory/cash-flow', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const { location_id, type, category, amount, description } = req.body;
+    if (!location_id || !type || !amount) return res.status(400).json({ error: 'Faltan datos' });
+    const r = await pool.query(
+      `INSERT INTO inventory_cash_flow(location_id,type,category,amount,description,registered_by)
+       VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [location_id, type, category||'OTRO', amount, description||null, req.user.id]
+    );
+    res.json(r.rows[0]);
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Alertas
+app.get('/api/admin/inventory/alerts', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT ia.*, l.name AS location_name, i.item_name
+      FROM inventory_alerts ia
+      JOIN locations l ON l.id = ia.location_id
+      LEFT JOIN inventory i ON i.id = ia.inventory_id
+      WHERE ia.resolved = FALSE
+      ORDER BY ia.created_at DESC
+    `);
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+app.put('/api/admin/inventory/alerts/:id/resolve', auth, role('ADMIN'), async (req, res) => {
+  try {
+    await pool.query('UPDATE inventory_alerts SET resolved=TRUE WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Reportes diarios
+app.get('/api/admin/inventory/reports', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const { location_id, days = 7 } = req.query;
+    let sql = `
+      SELECT r.*, l.name AS location_name
+      FROM inventory_daily_reports r
+      JOIN locations l ON l.id = r.location_id
+      WHERE r.report_date >= CURRENT_DATE - INTERVAL '${parseInt(days)} days'
+    `;
+    const params = [];
+    if (location_id) { sql += ' AND r.location_id=$1'; params.push(location_id); }
+    sql += ' ORDER BY r.report_date DESC, l.name';
+    const r = await pool.query(sql, params);
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Predicciones por sede
+app.get('/api/admin/inventory/predictions', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const { location_id } = req.query;
+    let sql = `
+      SELECT i.*, l.name AS location_name,
+        CASE 
+          WHEN predicted_days_left < 7 THEN 'CRITICO'
+          WHEN predicted_days_left < 15 THEN 'BAJO'
+          WHEN predicted_days_left < 30 THEN 'NORMAL'
+          ELSE 'BUENO'
+        END AS stock_status
+      FROM inventory i
+      JOIN locations l ON l.id = i.location_id
+      WHERE i.active = TRUE AND i.avg_daily_usage > 0
+    `;
+    const params = [];
+    if (location_id) { sql += ' AND i.location_id=$1'; params.push(location_id); }
+    sql += ' ORDER BY i.predicted_days_left ASC';
+    const r = await pool.query(sql, params);
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Resumen completo por sede
+app.get('/api/admin/inventory/sede-summary', auth, role('ADMIN'), async (req, res) => {
+  try {
+    const r = await pool.query(`
+      SELECT l.id, l.name, l.city,
+        COUNT(i.id) AS total_items,
+        COALESCE(SUM(i.quantity),0) AS total_stock,
+        COUNT(CASE WHEN i.quantity <= i.min_quantity THEN 1 END) AS low_stock,
+        COUNT(CASE WHEN i.quantity = 0 THEN 1 END) AS sin_stock,
+        COALESCE(SUM(i.quantity * i.unit_cost),0) AS total_value,
+        COALESCE(SUM(i.quantity * i.unit_price),0) AS total_retail,
+        COUNT(CASE WHEN i.predicted_days_left < 7 THEN 1 END) AS criticos
+      FROM locations l
+      LEFT JOIN inventory i ON i.location_id = l.id AND i.active = TRUE
+      WHERE l.active = TRUE
+      GROUP BY l.id, l.name, l.city
+      ORDER BY l.id
+    `);
+    res.json(r.rows);
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
+
+// Forzar reporte manual
+app.post('/api/admin/inventory/generate-report', auth, role('ADMIN'), async (req, res) => {
+  try {
+    await generateDailyReport();
+    await checkStockAlerts();
+    await updatePredictions();
+    res.json({ ok: true, message: 'Reporte generado y alertas verificadas' });
+  } catch(e) { res.status(500).json({ error: 'Error interno' }); }
+});
 app.listen(3001, () => console.log('✅ Backend Futura v5.0 activo en puerto 3001'));
