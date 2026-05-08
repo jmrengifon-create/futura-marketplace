@@ -186,7 +186,10 @@ app.post('/api/admin/inventory/:id/movement', auth, role('ADMIN'), async (req, r
     const item = await pool.query('SELECT * FROM inventory WHERE id=$1', [req.params.id]);
     if (!item.rows.length) return res.status(404).json({ error: 'Item no encontrado' });
     const before = item.rows[0].quantity;
-    const after  = movement_type === 'ENTRADA' ? before + parseInt(quantity) : before - parseInt(quantity);
+    const tiposEntrada = ['ENTRADA', 'DEVOLUCION'];
+const after = tiposEntrada.includes(movement_type)
+  ? before + parseInt(quantity)
+  : before - parseInt(quantity);
     await pool.query(
       `INSERT INTO inventory_movements(inventory_id,location_id,movement_type,quantity,quantity_before,quantity_after,registered_by,notes)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
